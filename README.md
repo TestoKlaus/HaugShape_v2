@@ -27,8 +27,13 @@ devtools::install_github("TestoKlaus/HaugShape_v2")
 ```r
 library(HaugShape)
 
-# Run the interactive Shiny app
-run_app()
+# Run the interactive Shiny app (development)
+# Option 1: From the project root
+# source('app.R')
+
+# Option 2: Using the helper function
+source('R/run_haug_app.R')
+run_haug_app()
 
 # Analyze shapes in a directory
 result <- shape_analysis(
@@ -49,7 +54,7 @@ overview <- Haug_overview(
 
 - `shape_analysis()`: Perform comprehensive shape analysis with EFA and PCA
 - `Haug_overview()`: Generate multi-panel overview plots
-- `run_app()`: Launch interactive Shiny application
+- `run_haug_app()`: Launch interactive Shiny application
 - `shape_plot()`: Create customizable shape plots
 - `cluster_plot()`: Generate cluster analysis plots
 
