@@ -18,7 +18,8 @@ ui <- dashboardPage(
   # Sidebar
   dashboardSidebar(
     sidebarMenu(
-      menuItem("1. Data Import", tabName = "import", icon = icon("upload"))
+      menuItem("1. Data Import", tabName = "import", icon = icon("upload")),
+      menuItem("2. Image Processing", tabName = "images", icon = icon("image"))
     )
   ),
   
@@ -29,6 +30,11 @@ ui <- dashboardPage(
       # Data Import Tab
       tabItem(tabName = "import",
         data_import_ui("import_excel")
+      ),
+      
+      # Image Processing Tab
+      tabItem(tabName = "images",
+        image_processing_ui("img_proc")
       )
       
     )
@@ -47,6 +53,9 @@ server <- function(input, output, session) {
       message(sprintf("Imported %d rows and %d columns", nrow(df), ncol(df)))
     }
   })
+
+  # Initialize image processing module
+  image_processing_server("img_proc")
 }
 
 # Run the application

@@ -73,15 +73,15 @@ convert_png_to_image <- function(input_path,
                                 verbose = TRUE) {
   
   # Input validation ----
-  .validate_image_conversion_inputs(input_path, output_dir, dimensions, padding, 
+  .cpi_validate_inputs(input_path, output_dir, dimensions, padding, 
                                    format, quality, background, overwrite, verbose)
   
   # Setup parameters ----
-  params <- .setup_image_conversion_params(output_dir, dimensions, padding, format, 
+  params <- .cpi_setup_params(output_dir, dimensions, padding, format, 
                                           quality, background, overwrite, verbose)
   
   # Get list of files to process ----
-  files_to_process <- .get_files_to_process(input_path, batch_processing, verbose)
+  files_to_process <- .cpi_get_files_to_process(input_path, batch_processing, verbose)
   
   if (verbose) {
     message("Starting image conversion...")
@@ -90,7 +90,7 @@ convert_png_to_image <- function(input_path,
   }
   
   # Process files ----
-  results <- .process_image_files(files_to_process, params)
+  results <- .cpi_process_image_files(files_to_process, params)
   
   # Summary ----
   successful <- sum(results$success)
@@ -109,7 +109,7 @@ convert_png_to_image <- function(input_path,
 
 #' Validate inputs for convert_png_to_image function
 #' @noRd
-.validate_image_conversion_inputs <- function(input_path, output_dir, dimensions, padding,
+.cpi_validate_inputs <- function(input_path, output_dir, dimensions, padding,
                                              format, quality, background, overwrite, verbose) {
   
   # Check magick package
@@ -187,7 +187,7 @@ convert_png_to_image <- function(input_path,
 
 #' Setup parameters for image conversion
 #' @noRd
-.setup_image_conversion_params <- function(output_dir, dimensions, padding, format, 
+.cpi_setup_params <- function(output_dir, dimensions, padding, format, 
                                           quality, background, overwrite, verbose) {
   
   # Normalize format
@@ -210,7 +210,7 @@ convert_png_to_image <- function(input_path,
 
 #' Get list of files to process
 #' @noRd
-.get_files_to_process <- function(input_path, batch_processing, verbose) {
+.cpi_get_files_to_process <- function(input_path, batch_processing, verbose) {
   
   if (file.exists(input_path) && !dir.exists(input_path)) {
     # Single file
@@ -241,7 +241,7 @@ convert_png_to_image <- function(input_path,
 
 #' Process multiple image files
 #' @noRd
-.process_image_files <- function(files, params) {
+.cpi_process_image_files <- function(files, params) {
   
   # Initialize results data frame
   results <- data.frame(
@@ -260,7 +260,7 @@ convert_png_to_image <- function(input_path,
     
     if (params$verbose) message("Processing: ", basename(file_path))
     
-    result <- .process_single_image(file_path, params)
+  result <- .cpi_process_single_image(file_path, params)
     
     # Store results
     results[i, "input_file"] <- file_path
@@ -276,11 +276,11 @@ convert_png_to_image <- function(input_path,
 
 #' Process a single image file
 #' @noRd
-.process_single_image <- function(file_path, params) {
+.cpi_process_single_image <- function(file_path, params) {
   
   tryCatch({
     # Setup output path
-    output_path <- .setup_output_path(file_path, params)
+  output_path <- .cpi_setup_output_path(file_path, params)
     
     # Check if output exists and overwrite setting
     if (file.exists(output_path) && !params$overwrite) {
@@ -304,11 +304,11 @@ convert_png_to_image <- function(input_path,
     img <- magick::image_convert(img, colorspace = "RGB")
     
     # Resize image
-    resized_img <- .resize_image_proportionally(img, params$dimensions)
+  resized_img <- .cpi_resize_image_proportionally(img, params$dimensions)
     
     # Add padding if specified
     if (params$padding > 0) {
-      padded_img <- .add_image_padding(resized_img, params$padding, params$background)
+  padded_img <- .cpi_add_image_padding(resized_img, params$padding, params$background)
     } else {
       padded_img <- resized_img
     }
@@ -318,7 +318,7 @@ convert_png_to_image <- function(input_path,
     processed_size <- paste0(final_info$width, "x", final_info$height)
     
     # Save image
-    .save_processed_image(padded_img, output_path, params)
+  .cpi_save_processed_image(padded_img, output_path, params)
     
     return(list(
       output_path = output_path,
@@ -341,7 +341,7 @@ convert_png_to_image <- function(input_path,
 
 #' Setup output file path
 #' @noRd
-.setup_output_path <- function(file_path, params) {
+.cpi_setup_output_path <- function(file_path, params) {
   
   # Determine output directory
   if (is.null(params$output_dir)) {
@@ -363,7 +363,7 @@ convert_png_to_image <- function(input_path,
 
 #' Resize image proportionally
 #' @noRd
-.resize_image_proportionally <- function(img, dimensions) {
+.cpi_resize_image_proportionally <- function(img, dimensions) {
   
   # Get current dimensions
   img_info <- magick::image_info(img)
@@ -388,7 +388,7 @@ convert_png_to_image <- function(input_path,
 
 #' Add padding around image
 #' @noRd
-.add_image_padding <- function(img, padding, background) {
+.cpi_add_image_padding <- function(img, padding, background) {
   
   # Get image dimensions
   img_info <- magick::image_info(img)
@@ -406,7 +406,7 @@ convert_png_to_image <- function(input_path,
 
 #' Save processed image
 #' @noRd
-.save_processed_image <- function(img, output_path, params) {
+.cpi_save_processed_image <- function(img, output_path, params) {
   
   if (params$format == "jpg") {
     magick::image_write(
