@@ -20,30 +20,26 @@ image_processing_ui <- function(id) {
           solidHeader = TRUE,
           width = 12,
 
-          radioButtons(
-            ns("source_mode"), "Select source",
-            choices = c("Upload files" = "files", "Folder path" = "folder"),
-            selected = "files"
-          ),
-
-          conditionalPanel(
-            condition = sprintf("input['%s'] == 'files'", ns("source_mode")),
-            fileInput(
-              ns("png_files"),
-              "Choose PNG file(s)",
-              multiple = TRUE,
-              accept = c(".png")
-            )
-          ),
-
-          conditionalPanel(
-            condition = sprintf("input['%s'] == 'folder'", ns("source_mode")),
-            uiOutput(ns("folder_chooser_ui"))
-          ),
+          uiOutput(ns("folder_chooser_ui")),
 
           uiOutput(ns("output_dir_ui")),
           selectInput(ns("format"), "Output format", choices = c("jpg", "bmp"), selected = "jpg"),
-          numericInput(ns("width"), "Target width (px)", value = 800, min = 1, step = 10),
+          radioButtons(
+            ns("dim_mode"), "Resize by",
+            choices = c("Width" = "width", "Height" = "height"),
+            selected = "width", inline = TRUE
+          ),
+          conditionalPanel(
+            condition = sprintf("input['%s'] == 'width'", ns("dim_mode")),
+            numericInput(ns("width"), "Target width (px)", value = 800, min = 1, step = 10)
+          ),
+          conditionalPanel(
+            condition = sprintf("input['%s'] == 'height'", ns("dim_mode")),
+            numericInput(ns("height"), "Target height (px)", value = 600, min = 1, step = 10)
+          ),
+          sliderInput(ns("padding"), "Padding (px)", min = 0, max = 100, value = 10, step = 1),
+          sliderInput(ns("quality"), "JPEG quality", min = 10, max = 100, value = 95, step = 1),
+          textInput(ns("background"), "Background color for padding", value = "white"),
           checkboxInput(ns("overwrite"), "Overwrite existing outputs", value = FALSE),
 
           actionButton(ns("convert"), "Convert images", class = "btn-success")
@@ -170,22 +166,16 @@ image_processing_server <- function(id) {
     })
 
     observeEvent(input$convert, {
-      # basic validation
-      if (input$source_mode == "files" && (is.null(input$png_files) || nrow(input$png_files) == 0)) {
-        showNotification("Please select at least one PNG file.", type = "warning")
-        return(invisible(NULL))
-      }
-      if (input$source_mode == "folder") {
-        if (isTRUE(shinyfiles_ready())) {
-          if (!nzchar(selected_folder())) {
-            showNotification("Please choose a folder.", type = "warning")
-            return(invisible(NULL))
-          }
-        } else {
-          if (is.null(input$folder_path_fallback) || trimws(input$folder_path_fallback) == "") {
-            showNotification("Please enter a valid folder path.", type = "warning")
-            return(invisible(NULL))
-          }
+      # basic validation (folder-only workflow)
+      if (isTRUE(shinyfiles_ready())) {
+        if (!nzchar(selected_folder())) {
+          showNotification("Please choose a folder.", type = "warning")
+          return(invisible(NULL))
+        }
+      } else {
+        if (is.null(input$folder_path_fallback) || trimws(input$folder_path_fallback) == "") {
+          showNotification("Please enter a valid folder path.", type = "warning")
+          return(invisible(NULL))
         }
       }
 
@@ -203,8 +193,13 @@ image_processing_server <- function(id) {
         }
       }
 
-      # build dimensions (compact: width only)
-      dims <- list(width = as.numeric(input$width))
+      # build dimensions from user selection
+      dims <- list()
+      if (input$dim_mode == "width") {
+        dims$width <- as.numeric(input$width)
+      } else {
+        dims$height <- as.numeric(input$height)
+      }
 
       # resolve and validate output directory
       out_dir <- if (isTRUE(shinyfiles_ready())) selected_output_dir() else input$output_dir_fallback
@@ -223,8 +218,22 @@ image_processing_server <- function(id) {
 
       withProgress(message = "Converting images...", value = 0, {
         res <- NULL
-        if (input$source_mode == "files") {
-          files <- input$png_files$datapath
+        # folder mode - batch processing per file
+        folder_path <- if (isTRUE(shinyfiles_ready())) selected_folder() else input$folder_path_fallback
+        folder_path <- normalizePath(folder_path, winslash = "/", mustWork = FALSE)
+        if (!dir.exists(folder_path)) {
+          showNotification(sprintf("Input folder does not exist: %s", folder_path), type = "error")
+          return(invisible(NULL))
+        }
+        files <- list.files(folder_path, pattern = "\\.png$", full.names = TRUE, ignore.case = TRUE, recursive = TRUE)
+        if (length(files) == 0) {
+          showNotification(sprintf("No PNG files found in folder: %s", folder_path), type = "warning", duration = 6)
+          res <- data.frame(
+            input_file = character(0), output_file = character(0),
+            original_size = character(0), processed_size = character(0),
+            success = logical(0), message = character(0), stringsAsFactors = FALSE
+          )
+        } else {
           n <- length(files)
           out_list <- vector("list", n)
           for (i in seq_along(files)) {
@@ -234,10 +243,10 @@ image_processing_server <- function(id) {
                 input_path = files[i],
                 output_dir = out_dir,
                 dimensions = dims,
-                padding = 0,
+                padding = input$padding,
                 format = input$format,
-                quality = 95,
-                background = "white",
+                quality = input$quality,
+                background = input$background,
                 batch_processing = FALSE,
                 overwrite = isTRUE(input$overwrite),
                 verbose = FALSE
@@ -251,50 +260,6 @@ image_processing_server <- function(id) {
             })
           }
           res <- do.call(rbind, out_list)
-        } else {
-          # folder mode - batch processing handled inside helper
-          folder_path <- if (isTRUE(shinyfiles_ready())) selected_folder() else input$folder_path_fallback
-          folder_path <- normalizePath(folder_path, winslash = "/", mustWork = FALSE)
-          if (!dir.exists(folder_path)) {
-            showNotification(sprintf("Input folder does not exist: %s", folder_path), type = "error")
-            return(invisible(NULL))
-          }
-          files <- list.files(folder_path, pattern = "\\.png$", full.names = TRUE, ignore.case = TRUE, recursive = TRUE)
-          if (length(files) == 0) {
-            showNotification(sprintf("No PNG files found in folder: %s", folder_path), type = "warning", duration = 6)
-            res <- data.frame(
-              input_file = character(0), output_file = character(0),
-              original_size = character(0), processed_size = character(0),
-              success = logical(0), message = character(0), stringsAsFactors = FALSE
-            )
-          } else {
-            n <- length(files)
-            out_list <- vector("list", n)
-            for (i in seq_along(files)) {
-              incProgress(1 / max(1, n), detail = basename(files[i]))
-              out_list[[i]] <- tryCatch({
-                convert_png_to_image(
-                  input_path = files[i],
-                  output_dir = out_dir,
-                  dimensions = dims,
-                  padding = 0,
-                  format = input$format,
-                  quality = 95,
-                  background = "white",
-                  batch_processing = FALSE,
-                  overwrite = isTRUE(input$overwrite),
-                  verbose = FALSE
-                )
-              }, error = function(e) {
-                data.frame(
-                  input_file = files[i], output_file = NA_character_,
-                  original_size = NA_character_, processed_size = NA_character_,
-                  success = FALSE, message = conditionMessage(e), stringsAsFactors = FALSE
-                )
-              })
-            }
-            res <- do.call(rbind, out_list)
-          }
         }
       })
       if (!is.null(res) && nrow(res) > 0) {
