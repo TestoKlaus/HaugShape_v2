@@ -73,6 +73,24 @@ data_import_ui <- function(id) {
             column(2, div(style = "margin-top: 24px;", actionButton(ns("add_col_btn"), "Add column", class = "btn-primary")))
           ),
           hr(),
+          tags$h4("Group builder"),
+          fluidRow(
+            column(4, textInput(ns("group_target_col"), "Target column (new or existing)", value = "group")),
+            column(4, selectInput(ns("group_id_col"), "ID column for grouping", choices = NULL)),
+            column(4, radioButtons(ns("group_method"), "Method", choices = c("Ranges (inclusive)" = "range", "List of IDs" = "list"), inline = TRUE))
+          ),
+          fluidRow(
+            column(3, checkboxInput(ns("group_sort_ids"), "Sort IDs ascending", value = TRUE)),
+            column(3, textInput(ns("group_default"), "Default fill (optional)", value = "")),
+            column(3, div(style = "margin-top: 24px;", actionButton(ns("group_add_rule"), "Add rule"))),
+            column(3, div(style = "margin-top: 24px;", actionButton(ns("group_remove_rule"), "Remove last")))
+          ),
+          uiOutput(ns("group_rules_ui")),
+          fluidRow(
+            column(3, div(style = "margin-top: 8px;", actionButton(ns("group_apply"), "Apply rules", class = "btn-success"))),
+            column(9, div(style = "margin-top: 14px;", textOutput(ns("group_status"))))
+          ),
+          hr(),
           helpText("To overwrite the original Excel file, pick its location and confirm overwrite."),
           fluidRow(
             column(6,
@@ -170,6 +188,13 @@ data_import_server <- function(id) {
     observeEvent(data_reactive(), {
       df <- data_reactive()
       working_data(df)
+    })
+
+    # Update group ID column choices for the Group builder
+    observe({
+      df <- working_data(); if (is.null(df)) df <- data_reactive(); req(df)
+      cols <- names(df)
+      updateSelectInput(session, "group_id_col", choices = cols, selected = if (!is.null(input$group_id_col) && input$group_id_col %in% cols) input$group_id_col else cols[1])
     })
 
     # Dynamic ID column selector once data is available
@@ -416,6 +441,105 @@ data_import_server <- function(id) {
         }
         DT::replaceData(proxy, display_df, resetPaging = FALSE, rownames = FALSE)
       })
+    })
+
+    # Group builder rules handling ------------------------------------------
+    group_rules_n <- reactiveVal(1L)
+    observeEvent(input$group_add_rule, { group_rules_n(group_rules_n() + 1L) })
+    observeEvent(input$group_remove_rule, { group_rules_n(max(1L, group_rules_n() - 1L)) })
+
+    output$group_rules_ui <- renderUI({
+      df <- working_data(); if (is.null(df)) df <- data_reactive(); req(df)
+      id_col <- input$group_id_col
+      choices <- if (!is.null(id_col) && id_col %in% names(df)) unique(df[[id_col]]) else character()
+      # Sort choices if requested
+      if (isTRUE(input$group_sort_ids) && length(choices)) {
+        choices <- tryCatch({
+          if (inherits(choices, c("Date","POSIXct","POSIXt")) || is.numeric(choices)) sort(choices) else sort(as.character(choices))
+        }, error = function(...) sort(as.character(choices)))
+      }
+      n <- group_rules_n()
+      method <- input$group_method %||% "range"
+      ui_list <- vector("list", n)
+      for (i in seq_len(n)) {
+        if (identical(method, "list")) {
+          ui_list[[i]] <- wellPanel(
+            fluidRow(
+              column(4, textInput(ns(paste0("g_label_", i)), paste0("Rule ", i, ": Group label"), value = "")),
+              column(8, selectizeInput(ns(paste0("g_ids_", i)), paste0("IDs for group ", i), choices = choices, multiple = TRUE))
+            )
+          )
+        } else {
+          ui_list[[i]] <- wellPanel(
+            fluidRow(
+              column(4, textInput(ns(paste0("g_label_", i)), paste0("Rule ", i, ": Group label"), value = "")),
+              column(4, selectInput(ns(paste0("g_start_", i)), paste0("Start ID (", i, ")"), choices = choices)),
+              column(4, selectInput(ns(paste0("g_end_", i)), paste0("End ID (", i, ")"), choices = choices))
+            )
+          )
+        }
+      }
+      do.call(tagList, ui_list)
+    })
+
+    observeEvent(input$group_apply, {
+      df <- working_data(); if (is.null(df)) df <- data_reactive(); req(df)
+      id_col <- input$group_id_col
+      if (is.null(id_col) || !nzchar(id_col) || !id_col %in% names(df)) {
+        output$group_status <- renderText("Please select a valid ID column."); return()
+      }
+      col_name <- input$group_target_col %||% "group"
+      method <- input$group_method %||% "range"
+      # Prepare target column with default fill
+      default_val <- input$group_default
+      df[[col_name]] <- rep_len(if (is.null(default_val)) NA_character_ else as.character(default_val), nrow(df))
+
+      # Build ID ordering for ranges
+      uniq_vals <- unique(df[[id_col]])
+      if (isTRUE(input$group_sort_ids)) {
+        uniq_vals <- tryCatch({
+          if (inherits(uniq_vals, c("Date","POSIXct","POSIXt")) || is.numeric(uniq_vals)) sort(uniq_vals) else sort(as.character(uniq_vals))
+        }, error = function(...) sort(as.character(uniq_vals)))
+      }
+      # Map value to order index
+      ord_map <- seq_along(uniq_vals); names(ord_map) <- as.character(uniq_vals)
+
+      applied <- 0L
+      n <- group_rules_n()
+      for (i in seq_len(n)) {
+        label <- input[[paste0("g_label_", i)]]
+        if (is.null(label) || !nzchar(label)) next
+        if (identical(method, "list")) {
+          ids <- input[[paste0("g_ids_", i)]]
+          if (is.null(ids) || length(ids) == 0) next
+          idx <- which(as.character(df[[id_col]]) %in% as.character(ids))
+          if (length(idx)) {
+            df[[col_name]][idx] <- as.character(label)
+            applied <- applied + length(idx)
+          }
+        } else {
+          s <- input[[paste0("g_start_", i)]]; e <- input[[paste0("g_end_", i)]]
+          if (is.null(s) || is.null(e) || !nzchar(s) || !nzchar(e)) next
+          ps <- suppressWarnings(as.integer(ord_map[as.character(s)]))
+          pe <- suppressWarnings(as.integer(ord_map[as.character(e)]))
+          if (is.na(ps) || is.na(pe)) next
+          lo <- min(ps, pe); hi <- max(ps, pe)
+          range_vals <- uniq_vals[lo:hi]
+          idx <- which(as.character(df[[id_col]]) %in% as.character(range_vals))
+          if (length(idx)) {
+            df[[col_name]][idx] <- as.character(label)
+            applied <- applied + length(idx)
+          }
+        }
+      }
+      working_data(df)
+      # Refresh table via proxy to avoid jump
+      display_df <- df
+      if ("shape" %in% names(display_df) && is.list(display_df$shape)) {
+        display_df$shape <- vapply(display_df$shape, function(x) if (is.null(x)) "NULL" else "Out", character(1))
+      }
+      DT::replaceData(proxy, display_df, resetPaging = FALSE, rownames = FALSE)
+      output$group_status <- renderText(paste0("Applied labels to ", applied, " rows in column '", col_name, "'."))
     })
 
 
