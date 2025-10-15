@@ -19,7 +19,8 @@ ui <- dashboardPage(
   dashboardSidebar(
     sidebarMenu(
       menuItem("1. Data Import", tabName = "import", icon = icon("upload")),
-      menuItem("2. Image Processing", tabName = "images", icon = icon("image"))
+      menuItem("2. Image Processing", tabName = "images", icon = icon("image")),
+      menuItem("3. Shape Analysis", tabName = "shape", icon = icon("chart-area"))
     )
   ),
   
@@ -35,6 +36,11 @@ ui <- dashboardPage(
       # Image Processing Tab
       tabItem(tabName = "images",
         image_processing_ui("img_proc")
+      )
+      ,
+      # Shape Analysis Tab
+      tabItem(tabName = "shape",
+        shape_analysis_ui("shape_an")
       )
       
     )
@@ -56,6 +62,9 @@ server <- function(input, output, session) {
 
   # Initialize image processing module
   image_processing_server("img_proc")
+
+  # Initialize shape analysis module
+  shape_analysis_server("shape_an")
 }
 
 # Run the application

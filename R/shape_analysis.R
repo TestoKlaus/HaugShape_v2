@@ -25,7 +25,9 @@
 #'     \item{pca_results}{The PCA object from Momocs}
 #'     \item{scores}{Data frame of PCA scores}
 #'     \item{summary}{Character string of PCA summary}
-#'     \item{output_path}{Path where results were saved}
+#'     \item{output_path}{Path where Excel results were saved}
+#'     \item{summary_txt_path}{Path to saved PCA summary .txt file}
+#'     \item{pc_plot_jpg_path}{Path to saved PC contributions .jpg}
 #'     \item{metadata}{List of analysis metadata (n_shapes, harmonics, etc.)}
 #'   }
 #'
@@ -77,6 +79,8 @@ shape_analysis <- function(shape_dir,
                           num_pcs = 10,
                           start_point = "left",
                           harmonics = NULL,
+                          align_orientation = FALSE,
+                          use_raw_shapes = FALSE,
                           verbose = TRUE) {
   
   # Input validation ----
@@ -94,13 +98,20 @@ shape_analysis <- function(shape_dir,
   
   shapes <- .import_shape_files(shape_dir, verbose)
   
-  # Normalize shapes ----
-  if (verbose) message("Normalizing shapes...")
-  normalized_shapes <- .normalize_shapes(shapes, start_point, verbose)
+  # Normalize shapes (unless raw mode) ----
+  if (isTRUE(use_raw_shapes)) {
+    if (verbose) message("Using shapes as-is (no centering/scaling/orientation changes)")
+    normalized_shapes <- shapes
+  } else {
+    if (verbose) message("Normalizing shapes...")
+    normalized_shapes <- .normalize_shapes(shapes, start_point, align_orientation, verbose)
+  }
   
   # Perform Elliptical Fourier Analysis ----
   if (verbose) message("Performing Elliptical Fourier Analysis...")
-  efa_results <- .perform_efa(normalized_shapes, norm, harmonics, verbose)
+  # If using raw shapes, do not apply EFA normalization (keep as-is)
+  effective_norm <- if (isTRUE(use_raw_shapes)) FALSE else norm
+  efa_results <- .perform_efa(normalized_shapes, effective_norm, harmonics, verbose)
   
   # Perform PCA ----
   if (verbose) message("Performing Principal Component Analysis...")
@@ -120,12 +131,41 @@ shape_analysis <- function(shape_dir,
   
   # Create PC contribution plot
   pc_plot <- .create_pc_contribution_plot(pca_results, num_pcs)
+
+  # Save additional artifacts (TXT summary and JPG plot) ----
+  # Build output file paths based on Excel file name
+  output_stem <- tools::file_path_sans_ext(basename(output_file_path))
+  summary_txt_path <- file.path(output_dir, paste0(output_stem, "_summary.txt"))
+  pc_plot_jpg_path <- file.path(output_dir, paste0(output_stem, "_pc_contrib.jpg"))
+
+  # Write summary text
+  tryCatch({
+    writeLines(analysis_summary, con = summary_txt_path, useBytes = TRUE)
+  }, error = function(e) {
+    warning("Failed to write summary TXT: ", conditionMessage(e))
+  })
+
+  # Save plot as JPEG (regenerate if needed)
+  tryCatch({
+    grDevices::jpeg(filename = pc_plot_jpg_path, width = 1600, height = 1200, quality = 95)
+    if (!is.null(pc_plot)) {
+      print(pc_plot)
+    } else {
+      max_pcs <- min(num_pcs, ncol(pca_results$x))
+      print(Momocs::PCcontrib(pca_results, nax = 1:max_pcs, sd.r = c(-2,-1,0,1,2)))
+    }
+    grDevices::dev.off()
+  }, error = function(e) {
+    grDevices::dev.off()
+    warning("Failed to save PC contribution plot JPG: ", conditionMessage(e))
+  })
   
   # Prepare metadata
   metadata <- list(
     n_shapes = length(shapes),
     n_harmonics = ifelse(is.null(harmonics), "automatic", harmonics),
     normalization = norm,
+    used_raw_shapes = isTRUE(use_raw_shapes),
     start_point = start_point,
     analysis_date = Sys.time()
   )
@@ -139,6 +179,8 @@ shape_analysis <- function(shape_dir,
       scores = scores,
       summary = analysis_summary,
       output_path = output_file_path,
+      summary_txt_path = summary_txt_path,
+      pc_plot_jpg_path = pc_plot_jpg_path,
       metadata = metadata,
       pc_contribution_plot = pc_plot
     ),
@@ -257,12 +299,16 @@ shape_analysis <- function(shape_dir,
 
 #' Normalize shapes
 #' @noRd
-.normalize_shapes <- function(shapes, start_point, verbose) {
+.normalize_shapes <- function(shapes, start_point, align_orientation, verbose) {
   tryCatch({
     normalized_shapes <- shapes %>%
       Momocs::coo_center() %>%
-      Momocs::coo_scale() %>%
-      Momocs::coo_slidedirection(start_point)
+      Momocs::coo_scale()
+    if (isTRUE(align_orientation)) {
+      normalized_shapes <- normalized_shapes %>% Momocs::coo_aligncalliper()
+      if (verbose) message("Orientation aligned using major axis (caliper alignment)")
+    }
+    normalized_shapes <- normalized_shapes %>% Momocs::coo_slidedirection(start_point)
     
     if (verbose) message("Shapes normalized with start point: ", start_point)
     return(normalized_shapes)
@@ -291,12 +337,20 @@ shape_analysis <- function(shape_dir,
 #' Perform Principal Component Analysis
 #' @noRd
 .perform_pca <- function(efa_results, verbose) {
+  # First attempt with scaling; if zero-variance columns cause an error, retry without scaling
   tryCatch({
     pca_results <- Momocs::PCA(efa_results, center = TRUE, scale. = TRUE)
     if (verbose) message("PCA completed successfully")
     return(pca_results)
   }, error = function(e) {
-    stop("Principal Component Analysis failed: ", e$message, call. = FALSE)
+    msg <- conditionMessage(e)
+    if (grepl("zero column|constant/zero", msg, ignore.case = TRUE)) {
+      if (verbose) message("Zero-variance descriptors detected; retrying PCA without scaling...")
+      pca_results2 <- Momocs::PCA(efa_results, center = TRUE, scale. = FALSE)
+      if (verbose) message("PCA completed successfully (no scaling)")
+      return(pca_results2)
+    }
+    stop("Principal Component Analysis failed: ", msg, call. = FALSE)
   })
 }
 
