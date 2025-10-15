@@ -773,6 +773,22 @@ shape_plot <- function(data,
   s_xadj <- as.numeric(params$features$shapes$x_adjust)
   s_yadj <- as.numeric(params$features$shapes$y_adjust)
 
+  # Determine plot aspect ratio (y/x) from styling; default 1:1. For "w:h", ratio = h/w
+  get_ratio <- function(asp) {
+    if (is.null(asp)) return(1)
+    if (is.numeric(asp) && is.finite(asp) && asp > 0) return(as.numeric(asp))
+    if (is.character(asp) && grepl(":", asp, fixed = TRUE)) {
+      parts <- strsplit(asp, ":", fixed = TRUE)[[1]]
+      if (length(parts) == 2) {
+        w <- suppressWarnings(as.numeric(parts[1]))
+        h <- suppressWarnings(as.numeric(parts[2]))
+        if (is.finite(w) && is.finite(h) && w > 0) return(h / w)
+      }
+    }
+    1
+  }
+  coord_ratio <- get_ratio(params$styling$axis$aspect)
+
   # Compute global scale in data units (use overall range)
   xr <- range(data[[x_col]], na.rm = TRUE)
   yr <- range(data[[y_col]], na.rm = TRUE)
@@ -813,6 +829,10 @@ shape_plot <- function(data,
     center <- colMeans(coords, na.rm = TRUE)
     rel <- sweep(coords, 2, center, FUN = "-")
     rel <- rel * scale_fac
+    # Compensate y dimension so shapes remain visually 1:1 under non-square plot aspect
+    if (is.finite(coord_ratio) && coord_ratio > 0 && coord_ratio != 1) {
+      rel[,2] <- rel[,2] / coord_ratio
+    }
 
     # Determine offset position for this row
     px <- as.numeric(draw_data[[x_col]][i])
@@ -827,7 +847,7 @@ shape_plot <- function(data,
     offx <- px + s_shift * ux + s_xadj
     offy <- py + s_shift * uy + s_yadj
 
-    final <- cbind(rel[,1] + offx, rel[,2] + offy)
+  final <- cbind(rel[,1] + offx, rel[,2] + offy)
     poly_list[[idx]] <- data.frame(
       sx = final[,1], sy = final[,2],
       .shape_id = idx,
