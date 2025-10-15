@@ -17,7 +17,7 @@ plotting_ui <- function(id) {
           status = "primary",
           solidHeader = TRUE,
           width = 12,
-          collapsible = TRUE,
+          collapsible = FALSE,
           selectInput(ns("x_col"), "X column", choices = NULL),
           selectInput(ns("y_col"), "Y column", choices = NULL),
           selectInput(ns("group_col"), "Group column (optional)", choices = c("(none)" = "")),
@@ -29,11 +29,23 @@ plotting_ui <- function(id) {
           solidHeader = TRUE,
           width = 12,
           collapsible = TRUE,
+          collapsed = TRUE,
           selectInput(ns("plot_style"), "Plot style", choices = c("Haug", "inverted_Haug", "publication"), selected = "Haug"),
           numericInput(ns("point_size"), "Point size", value = 2, min = 0.1, step = 0.1),
-          textInput(ns("point_shape"), "Point shape (single or per-group, comma-separated)", value = "21"),
+          selectInput(ns("point_shape_select"), "Point shape (single)", choices = c(
+            "Circle filled (21)" = 21,
+            "Circle solid (16)" = 16,
+            "Square filled (22)" = 22,
+            "Diamond filled (23)" = 23,
+            "Triangle up (24)" = 24,
+            "Circle open (1)" = 1,
+            "Square open (0)" = 0
+          ), selected = 21),
+          textInput(ns("point_shape"), "Point shape(s) per-group (comma-separated, overrides single)", value = ""),
           textInput(ns("point_color"), "Point color(s) (comma-separated)", value = "#1f77b4"),
+          uiOutput(ns("point_color_picker")),
           textInput(ns("point_fill"), "Point fill color(s) (comma-separated)", value = "#1f77b4"),
+          uiOutput(ns("point_fill_picker")),
           numericInput(ns("title_size"), "Title size", value = 24, min = 6, step = 1),
           numericInput(ns("label_size"), "Axis label size", value = 20, min = 6, step = 1),
           numericInput(ns("tick_size"), "Tick label size", value = 15, min = 6, step = 1),
@@ -47,10 +59,12 @@ plotting_ui <- function(id) {
           solidHeader = TRUE,
           width = 12,
           collapsible = TRUE,
+          collapsed = TRUE,
           checkboxInput(ns("hulls_show"), "Show hulls", value = FALSE),
           uiOutput(ns("hull_groups_ui")),
-          textInput(ns("hull_fill"), "Hull fill color(s) (comma-separated)", value = ""),
-          textInput(ns("hull_color"), "Hull border color", value = "black"),
+          # Per-group hull fill color pickers (if a group column is selected)
+          uiOutput(ns("hull_group_fill_pickers")),
+          uiOutput(ns("hull_group_border_pickers")),
           numericInput(ns("hull_alpha"), "Hull alpha", value = 0.1, min = 0, max = 1, step = 0.05),
           selectInput(ns("hull_linetype"), "Hull linetype", choices = c("solid","dashed","dotted","dotdash","longdash","twodash"), selected = "solid")
         ),
@@ -60,9 +74,14 @@ plotting_ui <- function(id) {
           solidHeader = TRUE,
           width = 12,
           collapsible = TRUE,
+          collapsed = TRUE,
           checkboxInput(ns("contours_show"), "Show contours", value = FALSE),
           uiOutput(ns("contour_groups_ui")),
-          textInput(ns("contour_colors"), "Contour color(s) (comma-separated)", value = "black"),
+          # Per-group contour color pickers
+          uiOutput(ns("contour_group_color_pickers")),
+          uiOutput(ns("contour_color_picker")),
+          # Fallback single color text input when colourpicker is unavailable
+          textInput(ns("contour_color_single_text"), "Contour color (single) [fallback]", value = "black"),
           numericInput(ns("contour_linewidth"), "Contour linewidth", value = 0.5, min = 0, step = 0.1)
         ),
         box(
@@ -71,6 +90,7 @@ plotting_ui <- function(id) {
           solidHeader = TRUE,
           width = 12,
           collapsible = TRUE,
+          collapsed = TRUE,
           checkboxInput(ns("shapes_show"), "Overlay shapes (requires 'shape' column)", value = FALSE),
           uiOutput(ns("shape_groups_ui")),
           textInput(ns("shape_col"), "Shape column name", value = "shape"),
@@ -85,6 +105,7 @@ plotting_ui <- function(id) {
           solidHeader = TRUE,
           width = 12,
           collapsible = TRUE,
+          collapsed = TRUE,
           textInput(ns("title"), "Plot title", value = NULL, placeholder = "Optional title"),
           textInput(ns("x_label"), "X axis label", value = NULL, placeholder = "Default: X column name"),
           textInput(ns("y_label"), "Y axis label", value = NULL, placeholder = "Default: Y column name"),
@@ -101,6 +122,7 @@ plotting_ui <- function(id) {
           solidHeader = TRUE,
           width = 12,
           collapsible = TRUE,
+          collapsed = TRUE,
           checkboxInput(ns("export"), "Export using shape_plot", value = FALSE),
           textInput(ns("export_filename"), "Filename (without extension)", value = "shape_plot_output"),
           textInput(ns("export_path"), "Export path (leave empty to use working dir)", value = ""),
@@ -117,7 +139,7 @@ plotting_ui <- function(id) {
           status = "info",
           solidHeader = TRUE,
           width = 12,
-          collapsible = TRUE,
+          collapsible = FALSE,
           plotOutput(ns("plot"), height = 600),
           br(),
           verbatimTextOutput(ns("messages"))
@@ -131,6 +153,87 @@ plotting_ui <- function(id) {
 plotting_server <- function(id, data_reactive) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
+
+    # Ensure colourpicker is available (auto-install quietly like other modules)
+    colourpicker_ready <- reactiveVal(FALSE)
+    observe({
+      ready <- requireNamespace("colourpicker", quietly = TRUE)
+      if (!isTRUE(ready)) {
+        try(install.packages("colourpicker", repos = "https://cran.r-project.org", quiet = TRUE), silent = TRUE)
+        ready <- requireNamespace("colourpicker", quietly = TRUE)
+      }
+      colourpicker_ready(isTRUE(ready))
+    })
+
+    # Render color pickers if available
+    output$point_color_picker <- renderUI({
+      if (!isTRUE(colourpicker_ready())) return(NULL)
+      colourpicker::colourInput(ns("point_color_single"), "Point color (single)", value = "#1f77b4")
+    })
+    output$point_fill_picker <- renderUI({
+      if (!isTRUE(colourpicker_ready())) return(NULL)
+      colourpicker::colourInput(ns("point_fill_single"), "Point fill (single)", value = "#1f77b4")
+    })
+    # Dynamic per-group hull fill color pickers
+    output$hull_group_fill_pickers <- renderUI({
+      if (!isTRUE(colourpicker_ready())) return(NULL)
+      df <- data_reactive(); req(df)
+      gcol <- input$group_col
+      if (is.null(gcol) || gcol == "" || !gcol %in% names(df)) return(NULL)
+      if (!isTRUE(input$hulls_show)) return(NULL)
+      groups <- input$hull_groups
+      if (is.null(groups) || length(groups) == 0) return(NULL)
+      # Default palette
+      pal <- tryCatch({
+        if (requireNamespace("scales", quietly = TRUE)) scales::hue_pal()(length(groups)) else rep("#1f77b4", length(groups))
+      }, error = function(...) rep("#1f77b4", length(groups)))
+      # Sanitize ID helper
+      safe_id <- function(x) gsub("[^A-Za-z0-9_]", "_", as.character(x))
+      # Build pickers
+      picker_list <- mapply(function(g, default_col) {
+        inputId <- ns(paste0("hull_fill_", safe_id(g)))
+        label <- paste0("Hull fill color: ", g)
+        colourpicker::colourInput(inputId, label, value = default_col)
+      }, groups, pal, SIMPLIFY = FALSE)
+      do.call(tagList, picker_list)
+    })
+    output$hull_group_border_pickers <- renderUI({
+      if (!isTRUE(colourpicker_ready())) return(NULL)
+      df <- data_reactive(); req(df)
+      gcol <- input$group_col
+      if (is.null(gcol) || gcol == "" || !gcol %in% names(df)) return(NULL)
+      if (!isTRUE(input$hulls_show)) return(NULL)
+      groups <- input$hull_groups
+      if (is.null(groups) || length(groups) == 0) return(NULL)
+      safe_id <- function(x) gsub("[^A-Za-z0-9_]", "_", as.character(x))
+      picker_list <- lapply(groups, function(g) {
+        inputId <- ns(paste0("hull_border_", safe_id(g)))
+        label <- paste0("Hull border color: ", g)
+        colourpicker::colourInput(inputId, label, value = "black")
+      })
+      do.call(tagList, picker_list)
+    })
+    output$contour_color_picker <- renderUI({
+      if (!isTRUE(colourpicker_ready())) return(NULL)
+      colourpicker::colourInput(ns("contour_color_single"), "Contour color (single)", value = "black")
+    })
+    # Dynamic per-group contour color pickers
+    output$contour_group_color_pickers <- renderUI({
+      if (!isTRUE(colourpicker_ready())) return(NULL)
+      df <- data_reactive(); req(df)
+      gcol <- input$group_col
+      if (is.null(gcol) || gcol == "" || !gcol %in% names(df)) return(NULL)
+      if (!isTRUE(input$contours_show)) return(NULL)
+      groups <- input$contour_groups
+      if (is.null(groups) || length(groups) == 0) return(NULL)
+      safe_id <- function(x) gsub("[^A-Za-z0-9_]", "_", as.character(x))
+      picker_list <- lapply(groups, function(g) {
+        inputId <- ns(paste0("contour_color_", safe_id(g)))
+        label <- paste0("Contour color: ", g)
+        colourpicker::colourInput(inputId, label, value = "black")
+      })
+      do.call(tagList, picker_list)
+    })
 
     # Helper: parse comma-separated values into vector, trim whitespace
     parse_csv <- function(x) {
@@ -206,16 +309,23 @@ plotting_server <- function(id, data_reactive) {
       }
 
       # Build styling list
-      point_shapes <- parse_csv(input$point_shape)
-      point_shapes_num <- suppressWarnings(as.numeric(point_shapes))
-      if (all(!is.na(point_shapes_num))) point_shapes <- point_shapes_num
+  point_shapes <- parse_csv(input$point_shape)
+  point_shapes_num <- suppressWarnings(as.numeric(point_shapes))
+  if (all(!is.na(point_shapes_num))) point_shapes <- point_shapes_num
+
+      # Choose single vs per-group shapes
+      final_shape <- if (length(point_shapes) > 0) point_shapes else as.numeric(input$point_shape_select)
+
+      # Prefer colourpicker single selections when available
+  point_color_single <- if (isTRUE(colourpicker_ready()) && !is.null(input$point_color_single) && nzchar(input$point_color_single)) input$point_color_single else NULL
+  point_fill_single  <- if (isTRUE(colourpicker_ready()) && !is.null(input$point_fill_single)  && nzchar(input$point_fill_single))  input$point_fill_single  else NULL
 
       styling <- list(
         plot_style = input$plot_style,
         point = list(
-          color = if (length(parse_csv(input$point_color)) > 0) parse_csv(input$point_color) else NULL,
-          fill = if (length(parse_csv(input$point_fill)) > 0) parse_csv(input$point_fill) else NULL,
-          shape = if (length(point_shapes) > 0) point_shapes else 21,
+          color = if (!is.null(point_color_single)) point_color_single else if (length(parse_csv(input$point_color)) > 0) parse_csv(input$point_color) else NULL,
+          fill = if (!is.null(point_fill_single)) point_fill_single else if (length(parse_csv(input$point_fill)) > 0) parse_csv(input$point_fill) else NULL,
+          shape = final_shape,
           size = input$point_size
         ),
         text = list(
@@ -230,20 +340,64 @@ plotting_server <- function(id, data_reactive) {
         )
       )
 
-      # Build features list
+    # Build features list
+    # Choose single vs list entries for hull/contour colors using pickers if present
+  # Hull single values removed; rely on per-group pickers or defaults
+  hull_fill_single <- NULL
+  hull_color_single <- NULL
+  contour_color_single <- if (isTRUE(colourpicker_ready()) && !is.null(input$contour_color_single) && nzchar(input$contour_color_single)) input$contour_color_single else if (!isTRUE(colourpicker_ready()) && nzchar(input$contour_color_single_text)) input$contour_color_single_text else NULL
+
+      # Collect per-group hull fill colors if provided
+      hull_fill_by_group <- NULL
+      if (isTRUE(colourpicker_ready()) && !is.null(input$hull_groups) && length(input$hull_groups) > 0) {
+        groups <- input$hull_groups
+        safe_id <- function(x) gsub("[^A-Za-z0-9_]", "_", as.character(x))
+        cols <- vapply(groups, function(g) {
+          val <- input[[paste0("hull_fill_", safe_id(g))]]
+          if (is.null(val) || !nzchar(val)) NA_character_ else val
+        }, character(1))
+        names(cols) <- as.character(groups)
+        # If at least one color is provided, keep vector (missing handled downstream)
+        if (any(!is.na(cols))) hull_fill_by_group <- cols[!is.na(cols)]
+      }
+      # Collect per-group hull border colors if provided
+      hull_color_by_group <- NULL
+      if (isTRUE(colourpicker_ready()) && !is.null(input$hull_groups) && length(input$hull_groups) > 0) {
+        groups <- input$hull_groups
+        safe_id <- function(x) gsub("[^A-Za-z0-9_]", "_", as.character(x))
+        cols <- vapply(groups, function(g) {
+          val <- input[[paste0("hull_border_", safe_id(g))]]
+          if (is.null(val) || !nzchar(val)) NA_character_ else val
+        }, character(1))
+        names(cols) <- as.character(groups)
+        if (any(!is.na(cols))) hull_color_by_group <- cols[!is.na(cols)]
+      }
+      # Collect per-group contour colors if provided
+      contour_color_by_group <- NULL
+      if (isTRUE(colourpicker_ready()) && !is.null(input$contour_groups) && length(input$contour_groups) > 0) {
+        groups <- input$contour_groups
+        safe_id <- function(x) gsub("[^A-Za-z0-9_]", "_", as.character(x))
+        cols <- vapply(groups, function(g) {
+          val <- input[[paste0("contour_color_", safe_id(g))]]
+          if (is.null(val) || !nzchar(val)) NA_character_ else val
+        }, character(1))
+        names(cols) <- as.character(groups)
+        if (any(!is.na(cols))) contour_color_by_group <- cols[!is.na(cols)]
+      }
+
       features <- list(
         hulls = list(
           show = isTRUE(input$hulls_show),
           groups = input$hull_groups,
-          fill = if (length(parse_csv(input$hull_fill)) > 0) parse_csv(input$hull_fill) else NULL,
-          color = input$hull_color,
+          fill = if (!is.null(hull_fill_by_group)) hull_fill_by_group else NULL,
+          color = if (!is.null(hull_color_by_group)) hull_color_by_group else NULL,
           alpha = input$hull_alpha,
           linetype = input$hull_linetype
         ),
         contours = list(
           show = isTRUE(input$contours_show),
           groups = input$contour_groups,
-          colors = if (length(parse_csv(input$contour_colors)) > 0) parse_csv(input$contour_colors) else NULL,
+          colors = if (!is.null(contour_color_by_group)) contour_color_by_group else if (!is.null(contour_color_single)) contour_color_single else NULL,
           linewidth = input$contour_linewidth
         ),
         shapes = list(

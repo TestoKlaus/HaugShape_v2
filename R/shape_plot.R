@@ -314,6 +314,32 @@ shape_plot <- function(data,
   return(default)
 }
 
+#' Resolve a vector (possibly named) to match a set of groups
+#' @noRd
+.resolve_group_vector <- function(vec, groups, fallback_fn = NULL) {
+  groups_chr <- as.character(groups)
+  # If vec is NULL or length 0, use fallback
+  if (is.null(vec) || length(vec) == 0) {
+    if (is.null(fallback_fn)) return(rep_len("#1f77b4", length(groups_chr)))
+    return(fallback_fn(length(groups_chr)))
+  }
+  # If named, align by names
+  nm <- names(vec)
+  if (!is.null(nm) && any(nzchar(nm))) {
+    out <- vapply(groups_chr, function(g) {
+      if (g %in% nm) vec[[g]] else NA_character_
+    }, character(1))
+    # Fill missing with rep_len of first (or fallback)
+    if (anyNA(out)) {
+      repl <- if (!is.null(fallback_fn)) fallback_fn(sum(is.na(out))) else rep_len(vec[[1]], sum(is.na(out)))
+      out[is.na(out)] <- repl
+    }
+    return(out)
+  }
+  # Otherwise, just recycle
+  return(rep_len(vec, length(groups_chr)))
+}
+
 # Data Preparation ----
 
 #' Prepare and clean plot data
@@ -478,8 +504,17 @@ shape_plot <- function(data,
     hull_groups <- params$features$hulls$groups
     if (is.null(hull_groups)) hull_groups <- params$group_vals
     
-    hull_fills <- rep_len(params$features$hulls$fill, length(hull_groups))
-    hull_colors <- rep_len(params$features$hulls$color, length(hull_groups))
+    # Resolve per-group aesthetics (supports named vectors)
+    hull_fills <- .resolve_group_vector(
+      params$features$hulls$fill,
+      hull_groups,
+      function(n) { if (requireNamespace("scales", quietly = TRUE)) scales::hue_pal()(n) else rep("#1f77b4", n) }
+    )
+    hull_colors <- .resolve_group_vector(
+      params$features$hulls$color,
+      hull_groups,
+      function(n) rep("black", n)
+    )
     hull_alphas <- rep_len(params$features$hulls$alpha, length(hull_groups))
     
     for (i in seq_along(hull_groups)) {
@@ -546,7 +581,11 @@ shape_plot <- function(data,
     })
   } else {
     # Group-specific contours
-    contour_colors <- rep_len(params$features$contours$colors, length(contour_groups))
+    contour_colors <- .resolve_group_vector(
+      params$features$contours$colors,
+      contour_groups,
+      function(n) rep("black", n)
+    )
     
     for (i in seq_along(contour_groups)) {
       group_val <- contour_groups[i]
