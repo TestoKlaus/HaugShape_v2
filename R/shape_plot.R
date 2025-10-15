@@ -227,6 +227,16 @@ shape_plot <- function(data,
     )
   )
   styling <- .merge_nested_lists(styling_defaults, styling)
+  # Ensure point aesthetics are not NULL after merge (UI may send NULLs)
+  if (is.null(styling$point$color) || length(styling$point$color) == 0) {
+    styling$point$color <- default_colors
+  }
+  if (is.null(styling$point$fill) || length(styling$point$fill) == 0) {
+    styling$point$fill <- default_colors
+  }
+  if (is.null(styling$point$shape) || length(styling$point$shape) == 0) {
+    styling$point$shape <- 21
+  }
   
   # Setup feature defaults
   features_defaults <- list(
@@ -318,19 +328,52 @@ shape_plot <- function(data,
 #' @noRd
 .resolve_group_vector <- function(vec, groups, fallback_fn = NULL) {
   groups_chr <- as.character(groups)
-  # If vec is NULL or length 0, use fallback
+  # Determine expected output type
+  detect_type <- function(x) {
+    t <- typeof(x)
+    if (length(x) == 0) return(t)
+    if (is.list(x)) return("list")
+    t
+  }
+  out_type <- if (!is.null(vec) && length(vec) > 0) detect_type(vec) else {
+    if (!is.null(fallback_fn)) detect_type(fallback_fn(1)) else "character"
+  }
+  template <- switch(out_type,
+    "integer" = integer(1),
+    "double" = numeric(1),
+    "logical" = logical(1),
+    character(1)
+  )
+  na_value <- switch(out_type,
+    "integer" = NA_integer_,
+    "double" = NA_real_,
+    "logical" = NA,
+    NA_character_
+  )
+
+  # If vec is NULL/empty, return fallback replicated
   if (is.null(vec) || length(vec) == 0) {
-    if (is.null(fallback_fn)) return(rep_len("#1f77b4", length(groups_chr)))
+    if (is.null(fallback_fn)) {
+      default_val <- switch(out_type,
+        "integer" = 1L,
+        "double" = 1,
+        "logical" = TRUE,
+        "character" = "#1f77b4",
+        "#1f77b4"
+      )
+      return(rep_len(default_val, length(groups_chr)))
+    }
     return(fallback_fn(length(groups_chr)))
   }
+
   # If named, align by names
   nm <- names(vec)
   if (!is.null(nm) && any(nzchar(nm))) {
     out <- vapply(groups_chr, function(g) {
-      if (g %in% nm) vec[[g]] else NA_character_
-    }, character(1))
+      if (g %in% nm) vec[[g]] else na_value
+    }, template)
     # Fill missing with rep_len of first (or fallback)
-    if (anyNA(out)) {
+    if (any(is.na(out))) {
       repl <- if (!is.null(fallback_fn)) fallback_fn(sum(is.na(out))) else rep_len(vec[[1]], sum(is.na(out)))
       out[is.na(out)] <- repl
     }
@@ -439,9 +482,21 @@ shape_plot <- function(data,
   
   if (!is.null(group_col) && !is.null(params$group_vals)) {
     # Add grouped points
-    point_colors <- rep_len(params$styling$point$color, length(params$group_vals))
-    point_fills <- rep_len(params$styling$point$fill, length(params$group_vals))
-    point_shapes <- rep_len(params$styling$point$shape, length(params$group_vals))
+    point_colors <- .resolve_group_vector(
+      params$styling$point$color,
+      params$group_vals,
+      function(n) { if (requireNamespace("scales", quietly = TRUE)) scales::hue_pal()(n) else rep("#1f77b4", n) }
+    )
+    point_fills <- .resolve_group_vector(
+      params$styling$point$fill,
+      params$group_vals,
+      function(n) { if (requireNamespace("scales", quietly = TRUE)) scales::hue_pal()(n) else rep("#1f77b4", n) }
+    )
+    point_shapes <- .resolve_group_vector(
+      params$styling$point$shape,
+      params$group_vals,
+      function(n) rep(21, n)
+    )
     point_sizes <- rep_len(params$styling$point$size, length(params$group_vals))
     
     for (i in seq_along(params$group_vals)) {

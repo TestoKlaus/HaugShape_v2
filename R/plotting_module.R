@@ -32,20 +32,9 @@ plotting_ui <- function(id) {
           collapsed = TRUE,
           selectInput(ns("plot_style"), "Plot style", choices = c("Haug", "inverted_Haug", "publication"), selected = "Haug"),
           numericInput(ns("point_size"), "Point size", value = 2, min = 0.1, step = 0.1),
-          selectInput(ns("point_shape_select"), "Point shape (single)", choices = c(
-            "Circle filled (21)" = 21,
-            "Circle solid (16)" = 16,
-            "Square filled (22)" = 22,
-            "Diamond filled (23)" = 23,
-            "Triangle up (24)" = 24,
-            "Circle open (1)" = 1,
-            "Square open (0)" = 0
-          ), selected = 21),
-          textInput(ns("point_shape"), "Point shape(s) per-group (comma-separated, overrides single)", value = ""),
-          textInput(ns("point_color"), "Point color(s) (comma-separated)", value = "#1f77b4"),
-          uiOutput(ns("point_color_picker")),
-          textInput(ns("point_fill"), "Point fill color(s) (comma-separated)", value = "#1f77b4"),
-          uiOutput(ns("point_fill_picker")),
+          uiOutput(ns("point_group_color_pickers")),
+          uiOutput(ns("point_group_fill_pickers")),
+          uiOutput(ns("point_group_shape_pickers")),
           numericInput(ns("title_size"), "Title size", value = 24, min = 6, step = 1),
           numericInput(ns("label_size"), "Axis label size", value = 20, min = 6, step = 1),
           numericInput(ns("tick_size"), "Tick label size", value = 15, min = 6, step = 1),
@@ -79,9 +68,6 @@ plotting_ui <- function(id) {
           uiOutput(ns("contour_groups_ui")),
           # Per-group contour color pickers
           uiOutput(ns("contour_group_color_pickers")),
-          uiOutput(ns("contour_color_picker")),
-          # Fallback single color text input when colourpicker is unavailable
-          textInput(ns("contour_color_single_text"), "Contour color (single) [fallback]", value = "black"),
           numericInput(ns("contour_linewidth"), "Contour linewidth", value = 0.5, min = 0, step = 0.1)
         ),
         box(
@@ -125,7 +111,8 @@ plotting_ui <- function(id) {
           collapsed = TRUE,
           checkboxInput(ns("export"), "Export using shape_plot", value = FALSE),
           textInput(ns("export_filename"), "Filename (without extension)", value = "shape_plot_output"),
-          textInput(ns("export_path"), "Export path (leave empty to use working dir)", value = ""),
+          uiOutput(ns("export_dir_ui")),
+          textOutput(ns("export_dir_txt")),
           selectInput(ns("export_format"), "Format", choices = c("tiff","png","jpg","pdf"), selected = "tiff"),
           numericInput(ns("export_width"), "Width (inches)", value = 10, min = 1, step = 0.5),
           numericInput(ns("export_height"), "Height (inches)", value = 8, min = 1, step = 0.5),
@@ -154,6 +141,13 @@ plotting_server <- function(id, data_reactive) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
+    # Helper: null-or-empty coalesce
+    `%||%` <- function(a, b) {
+      if (is.null(a)) return(b)
+      if (is.character(a) && identical(length(a), 1L) && !nzchar(a)) return(b)
+      a
+    }
+
     # Ensure colourpicker is available (auto-install quietly like other modules)
     colourpicker_ready <- reactiveVal(FALSE)
     observe({
@@ -165,14 +159,63 @@ plotting_server <- function(id, data_reactive) {
       colourpicker_ready(isTRUE(ready))
     })
 
-    # Render color pickers if available
-    output$point_color_picker <- renderUI({
-      if (!isTRUE(colourpicker_ready())) return(NULL)
-      colourpicker::colourInput(ns("point_color_single"), "Point color (single)", value = "#1f77b4")
+    # Directory picker for export using shinyFiles
+    shinyfiles_ready <- reactiveVal(FALSE)
+    observe({
+      ready <- requireNamespace("shinyFiles", quietly = TRUE)
+      if (!isTRUE(ready)) {
+        try(install.packages("shinyFiles", repos = "https://cran.r-project.org", quiet = TRUE), silent = TRUE)
+        ready <- requireNamespace("shinyFiles", quietly = TRUE)
+      }
+      shinyfiles_ready(isTRUE(ready))
     })
-    output$point_fill_picker <- renderUI({
+
+    # Dynamic per-group point color/fill/shape pickers
+    output$point_group_color_pickers <- renderUI({
       if (!isTRUE(colourpicker_ready())) return(NULL)
-      colourpicker::colourInput(ns("point_fill_single"), "Point fill (single)", value = "#1f77b4")
+      df <- data_reactive(); req(df)
+      gcol <- input$group_col
+      if (is.null(gcol) || gcol == "" || !gcol %in% names(df)) return(NULL)
+      groups <- if (!is.null(input$group_vals) && length(input$group_vals)) input$group_vals else unique(df[[gcol]])
+      pal <- tryCatch({ if (requireNamespace("scales", quietly = TRUE)) scales::hue_pal()(length(groups)) else rep("#1f77b4", length(groups)) }, error = function(...) rep("#1f77b4", length(groups)))
+      safe_id <- function(x) gsub("[^A-Za-z0-9_]", "_", as.character(x))
+      picker_list <- mapply(function(g, default_col) {
+        colourpicker::colourInput(ns(paste0("point_color_", safe_id(g))), paste0("Point color: ", g), value = default_col)
+      }, groups, pal, SIMPLIFY = FALSE)
+      do.call(tagList, picker_list)
+    })
+    output$point_group_fill_pickers <- renderUI({
+      if (!isTRUE(colourpicker_ready())) return(NULL)
+      df <- data_reactive(); req(df)
+      gcol <- input$group_col
+      if (is.null(gcol) || gcol == "" || !gcol %in% names(df)) return(NULL)
+      groups <- if (!is.null(input$group_vals) && length(input$group_vals)) input$group_vals else unique(df[[gcol]])
+      pal <- tryCatch({ if (requireNamespace("scales", quietly = TRUE)) scales::hue_pal()(length(groups)) else rep("#1f77b4", length(groups)) }, error = function(...) rep("#1f77b4", length(groups)))
+      safe_id <- function(x) gsub("[^A-Za-z0-9_]", "_", as.character(x))
+      picker_list <- mapply(function(g, default_col) {
+        colourpicker::colourInput(ns(paste0("point_fill_", safe_id(g))), paste0("Point fill: ", g), value = default_col)
+      }, groups, pal, SIMPLIFY = FALSE)
+      do.call(tagList, picker_list)
+    })
+    output$point_group_shape_pickers <- renderUI({
+      df <- data_reactive(); req(df)
+      gcol <- input$group_col
+      if (is.null(gcol) || gcol == "" || !gcol %in% names(df)) return(NULL)
+      groups <- if (!is.null(input$group_vals) && length(input$group_vals)) input$group_vals else unique(df[[gcol]])
+      choices <- c(
+        "Circle filled (21)" = 21,
+        "Circle solid (16)" = 16,
+        "Square filled (22)" = 22,
+        "Diamond filled (23)" = 23,
+        "Triangle up (24)" = 24,
+        "Circle open (1)" = 1,
+        "Square open (0)" = 0
+      )
+      safe_id <- function(x) gsub("[^A-Za-z0-9_]", "_", as.character(x))
+      picker_list <- lapply(groups, function(g) {
+        selectInput(ns(paste0("point_shape_", safe_id(g))), paste0("Point shape: ", g), choices = choices, selected = 21)
+      })
+      do.call(tagList, picker_list)
     })
     # Dynamic per-group hull fill color pickers
     output$hull_group_fill_pickers <- renderUI({
@@ -213,10 +256,6 @@ plotting_server <- function(id, data_reactive) {
       })
       do.call(tagList, picker_list)
     })
-    output$contour_color_picker <- renderUI({
-      if (!isTRUE(colourpicker_ready())) return(NULL)
-      colourpicker::colourInput(ns("contour_color_single"), "Contour color (single)", value = "black")
-    })
     # Dynamic per-group contour color pickers
     output$contour_group_color_pickers <- renderUI({
       if (!isTRUE(colourpicker_ready())) return(NULL)
@@ -226,16 +265,18 @@ plotting_server <- function(id, data_reactive) {
       if (!isTRUE(input$contours_show)) return(NULL)
       groups <- input$contour_groups
       if (is.null(groups) || length(groups) == 0) return(NULL)
+      # Default to a palette like hulls
+      pal <- tryCatch({ if (requireNamespace("scales", quietly = TRUE)) scales::hue_pal()(length(groups)) else rep("#1f77b4", length(groups)) }, error = function(...) rep("#1f77b4", length(groups)))
       safe_id <- function(x) gsub("[^A-Za-z0-9_]", "_", as.character(x))
-      picker_list <- lapply(groups, function(g) {
+      picker_list <- mapply(function(g, default_col) {
         inputId <- ns(paste0("contour_color_", safe_id(g)))
         label <- paste0("Contour color: ", g)
-        colourpicker::colourInput(inputId, label, value = "black")
-      })
+        colourpicker::colourInput(inputId, label, value = default_col)
+      }, groups, pal, SIMPLIFY = FALSE)
       do.call(tagList, picker_list)
     })
 
-    # Helper: parse comma-separated values into vector, trim whitespace
+    # Helper: parse comma-separated values into vector (legacy UI removed, keep in case of inputs from sessions)
     parse_csv <- function(x) {
       if (is.null(x) || !nzchar(x)) return(character())
       parts <- unlist(strsplit(x, ","))
@@ -284,6 +325,42 @@ plotting_server <- function(id, data_reactive) {
       selectInput(ns("shape_groups"), "Shape overlay groups (optional)", choices = vals, selected = vals, multiple = TRUE)
     })
 
+    # Export directory chooser and display
+    output$export_dir_ui <- renderUI({
+      if (!isTRUE(shinyfiles_ready())) return(helpText("Directory picker unavailable; using working directory"))
+      shinyFiles::shinyDirButton(ns("export_dir"), label = "Choose export folder", title = "Select export folder")
+    })
+    export_dir_path <- reactiveVal("")
+    observeEvent(shinyfiles_ready(), {
+      if (!isTRUE(shinyfiles_ready())) return()
+      roots <- try(shinyFiles::getVolumes()(), silent = TRUE)
+      if (inherits(roots, "try-error") || is.null(roots) || length(roots) == 0) {
+        roots <- c()
+      }
+      if (.Platform$OS.type == "windows" && dir.exists("C:/")) {
+        roots <- c(`C:` = "C:/", roots)
+      }
+      roots <- c(roots, Home = normalizePath("~"), `Working Dir` = normalizePath(getwd()))
+      shinyFiles::shinyDirChoose(input, id = "export_dir", roots = roots, session = session)
+    })
+    observeEvent(input$export_dir, {
+      req(shinyfiles_ready())
+      roots <- try(shinyFiles::getVolumes()(), silent = TRUE)
+      if (inherits(roots, "try-error") || is.null(roots) || length(roots) == 0) {
+        roots <- c()
+      }
+      if (.Platform$OS.type == "windows" && dir.exists("C:/")) {
+        roots <- c(`C:` = "C:/", roots)
+      }
+      roots <- c(roots, Home = normalizePath("~"), `Working Dir` = normalizePath(getwd()))
+      sel <- try(shinyFiles::parseDirPath(roots, input$export_dir), silent = TRUE)
+      if (!inherits(sel, "try-error") && length(sel) > 0) export_dir_path(as.character(sel))
+    })
+    output$export_dir_txt <- renderText({
+      p <- export_dir_path()
+      if (is.null(p) || !nzchar(p)) "No folder selected (using working directory)" else p
+    })
+
     # Render plot
     plot_obj <- reactiveVal(NULL)
     messages <- reactiveVal("")
@@ -308,24 +385,43 @@ plotting_server <- function(id, data_reactive) {
         if (!is.null(gvals_sel) && length(gvals_sel) > 0) gvals <- gvals_sel
       }
 
-      # Build styling list
-  point_shapes <- parse_csv(input$point_shape)
-  point_shapes_num <- suppressWarnings(as.numeric(point_shapes))
-  if (all(!is.na(point_shapes_num))) point_shapes <- point_shapes_num
-
-      # Choose single vs per-group shapes
-      final_shape <- if (length(point_shapes) > 0) point_shapes else as.numeric(input$point_shape_select)
-
-      # Prefer colourpicker single selections when available
-  point_color_single <- if (isTRUE(colourpicker_ready()) && !is.null(input$point_color_single) && nzchar(input$point_color_single)) input$point_color_single else NULL
-  point_fill_single  <- if (isTRUE(colourpicker_ready()) && !is.null(input$point_fill_single)  && nzchar(input$point_fill_single))  input$point_fill_single  else NULL
+      # Build styling list from per-group pickers; fallback to defaults if none
+      # Collect groups used for styling (use group filter if provided)
+      style_groups <- NULL
+      if (!is.null(gcol) && nzchar(gcol)) {
+        style_groups <- if (!is.null(gvals) && length(gvals)) gvals else unique(df[[gcol]])
+      }
+      # Collect per-group point colors/fills/shapes
+      point_colors <- NULL
+      point_fills <- NULL
+      point_shapes <- NULL
+      if (!is.null(style_groups) && length(style_groups)) {
+        safe_id <- function(x) gsub("[^A-Za-z0-9_]", "_", as.character(x))
+        if (isTRUE(colourpicker_ready())) {
+          cols <- vapply(style_groups, function(g) input[[paste0("point_color_", safe_id(g))]] %||% NA_character_, character(1))
+          fills <- vapply(style_groups, function(g) input[[paste0("point_fill_", safe_id(g))]] %||% NA_character_, character(1))
+          if (any(!is.na(cols))) { point_colors <- cols[!is.na(cols)]; names(point_colors) <- as.character(style_groups[!is.na(cols)]) }
+          if (any(!is.na(fills))) { point_fills <- fills[!is.na(fills)]; names(point_fills) <- as.character(style_groups[!is.na(fills)]) }
+        }
+        shapes <- vapply(style_groups, function(g) {
+          val <- input[[paste0("point_shape_", safe_id(g))]]
+          if (is.null(val)) return(NA_real_)
+          # Coerce both character and numeric to numeric safely
+          num <- suppressWarnings(as.numeric(val))
+          if (is.na(num)) NA_real_ else num
+        }, numeric(1))
+        if (any(!is.na(shapes))) {
+          point_shapes <- shapes[!is.na(shapes)]
+          names(point_shapes) <- as.character(style_groups[!is.na(shapes)])
+        }
+      }
 
       styling <- list(
         plot_style = input$plot_style,
         point = list(
-          color = if (!is.null(point_color_single)) point_color_single else if (length(parse_csv(input$point_color)) > 0) parse_csv(input$point_color) else NULL,
-          fill = if (!is.null(point_fill_single)) point_fill_single else if (length(parse_csv(input$point_fill)) > 0) parse_csv(input$point_fill) else NULL,
-          shape = final_shape,
+          color = point_colors,
+          fill = point_fills,
+          shape = point_shapes,
           size = input$point_size
         ),
         text = list(
@@ -345,7 +441,8 @@ plotting_server <- function(id, data_reactive) {
   # Hull single values removed; rely on per-group pickers or defaults
   hull_fill_single <- NULL
   hull_color_single <- NULL
-  contour_color_single <- if (isTRUE(colourpicker_ready()) && !is.null(input$contour_color_single) && nzchar(input$contour_color_single)) input$contour_color_single else if (!isTRUE(colourpicker_ready()) && nzchar(input$contour_color_single_text)) input$contour_color_single_text else NULL
+  # No single contour color; rely on per-group pickers or defaults
+  contour_color_single <- NULL
 
       # Collect per-group hull fill colors if provided
       hull_fill_by_group <- NULL
@@ -397,7 +494,7 @@ plotting_server <- function(id, data_reactive) {
         contours = list(
           show = isTRUE(input$contours_show),
           groups = input$contour_groups,
-          colors = if (!is.null(contour_color_by_group)) contour_color_by_group else if (!is.null(contour_color_single)) contour_color_single else NULL,
+          colors = if (!is.null(contour_color_by_group)) contour_color_by_group else NULL,
           linewidth = input$contour_linewidth
         ),
         shapes = list(
@@ -433,7 +530,10 @@ plotting_server <- function(id, data_reactive) {
       export_options <- list(
         export = isTRUE(input$export),
         filename = if (nzchar(input$export_filename)) input$export_filename else "shape_plot_output",
-        path = if (nzchar(input$export_path)) input$export_path else NULL,
+        path = {
+          p <- export_dir_path()
+          if (!is.null(p) && nzchar(p)) p else NULL
+        },
         format = input$export_format,
         width = input$export_width,
         height = input$export_height,
