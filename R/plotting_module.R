@@ -159,10 +159,7 @@ plotting_ui <- function(id) {
           collapsible = TRUE,
           collapsed = FALSE,
           helpText("Summary of what is currently displayed in the plot."),
-          htmlOutput(ns("legend_html")),
-          div(style = "margin-top:8px;",
-              actionButton(ns("show_hull_specimens"), "Show hull specimens", class = "btn-primary")
-          )
+          htmlOutput(ns("legend_html"))
         )
       )
     )
@@ -764,49 +761,7 @@ plotting_server <- function(id, data_reactive) {
       do.call(tagList, rows)
     })
 
-    observeEvent(input$show_hull_specimens, {
-      df <- data_reactive(); req(df)
-      gcol <- input$group_col; req(nzchar(gcol))
-      x_col <- input$x_col; y_col <- input$y_col
-      gvals <- input$group_vals
-      # Default groups if none explicitly selected
-      if (is.null(gvals) || !length(gvals)) gvals <- unique(df[[gcol]])
-      res <- try(get_hull_specimen_table(
-        data = df,
-        x_cols = x_col,
-        y_cols = y_col,
-        group_col = gcol,
-        group_vals = gvals,
-        verbose = FALSE
-      ), silent = TRUE)
-      if (inherits(res, "try-error")) {
-        showModal(modalDialog(title = "Hull specimens", "Failed to compute hull specimens."))
-        return()
-      }
-      # Prefer a light textual summary if ggpubr tables aren't available
-      text_summary <- NULL
-      if (!requireNamespace("ggpubr", quietly = TRUE)) {
-        sumdf <- res$summary
-        text_summary <- paste0(
-          "Total sections: ", if (!is.null(sumdf) && nrow(sumdf)) sumdf$value[sumdf$metric == "Total sections"] else NA,
-          "\nTotal rows: ", if (!is.null(sumdf) && nrow(sumdf)) sumdf$value[sumdf$metric == "Total rows"] else NA
-        )
-      }
-      ui <- if (!is.null(text_summary)) {
-        tagList(pre(text_summary))
-      } else {
-        # ggpubr tables exist; render the first page to keep it small
-        if (length(res$tables) > 0 && inherits(res$tables[[1]], "ggplot")) {
-          plotOutput(ns("hull_table_plot"), height = 300)
-        } else {
-          pre("No table available.")
-        }
-      }
-      showModal(modalDialog(title = "Hull specimens (first page)", size = "l", easyClose = TRUE, footer = modalButton("Close"), ui))
-      if (length(res$tables) > 0 && inherits(res$tables[[1]], "ggplot")) {
-        output$hull_table_plot <- renderPlot({ print(res$tables[[1]]) })
-      }
-    })
+    # Removed: hull specimens modal button and observer (now shown inline in the legend)
 
     invisible(list(plot = plot_obj))
   })
