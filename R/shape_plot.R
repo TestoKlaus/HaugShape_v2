@@ -23,7 +23,7 @@
 #'   \item{plot_style}{Style theme: "Haug", "inverted_Haug", "publication" (default: "Haug")}
 #'   \item{point}{List with point styling (color, fill, shape, size)}
 #'   \item{text}{List with text styling (title_size, label_size, tick_size)}
-#'   \item{axis}{List with axis styling (linewidth, tick_length, tick_margin)}
+#'   \item{axis}{List with axis styling (linewidth, tick_length, tick_margin, fixed_aspect)}
 #' }
 #'
 #' The `features` parameter accepts a list with the following options:
@@ -32,6 +32,21 @@
 #'   \item{contours}{List with contour options (show, groups, colors, linewidth)}
 #'   \item{shapes}{List with shape options (show, groups, size, shift, adjustments)}
 #' }
+#'
+#' The `export_options` parameter accepts a list with the following options:
+#' \describe{
+#'   \item{export}{Logical, whether to export the plot (default: FALSE)}
+#'   \item{filename}{Base filename without extension}
+#'   \item{path}{Optional output directory}
+#'   \item{format}{Output format, e.g. "tiff" or "jpg"}
+#'   \item{dpi}{Resolution in dots per inch (default: 300)}
+#'   \item{width}{Optional width in inches}
+#'   \item{height}{Optional height in inches}
+#' }
+#' Notes on export behavior:
+#' - Shapes and geometry will not be distorted: by default a fixed 1:1 aspect ratio is applied.
+#' - If only one of width/height is provided, the other is computed to preserve the aspect ratio.
+#' - If both are provided, the plot maintains its aspect ratio inside the image, adding padding as needed.
 #'
 #' @return A ggplot2 object representing the scatter plot.
 #'
@@ -125,6 +140,10 @@ shape_plot <- function(data,
   
   # Apply styling and theming ----
   plot <- .apply_plot_styling(plot, params)
+  # Ensure fixed aspect ratio to avoid shape distortion when resizing
+  if (isTRUE(params$styling$axis$fixed_aspect)) {
+    plot <- plot + ggplot2::coord_fixed(ratio = 1, expand = TRUE)
+  }
   # Centralized axes overlay (legacy style)
   if (isTRUE(params$styling$axis$central_axes)) {
     plot <- .apply_central_axes(plot, clean_data, x_col, y_col, params)
@@ -223,7 +242,8 @@ shape_plot <- function(data,
       linewidth = 1,
       tick_length = 0.005,
       tick_margin = 0.05,
-      central_axes = TRUE
+      central_axes = TRUE,
+      fixed_aspect = TRUE
     )
   )
   styling <- .merge_nested_lists(styling_defaults, styling)
@@ -300,10 +320,10 @@ shape_plot <- function(data,
     export = FALSE,
     filename = "shape_plot_output",
     path = NULL,
-    format = "tiff",
-    width = 10,
-    height = 8,
-    dpi = 300
+    format = "tiff",  # "tiff" | "jpg" | "png" etc.
+    width = NULL,      # in inches; if NULL and height provided, computed from aspect
+    height = NULL,     # in inches; if NULL and width provided, computed from aspect
+    dpi = 300          # dots per inch
   )
   export_options <- utils::modifyList(export_defaults, export_options)
   
@@ -1019,14 +1039,46 @@ shape_plot <- function(data,
   
   if (verbose) message("Exporting plot to: ", file_path)
   
+  # Determine aspect ratio from plot build if available, fallback to 1
+  aspect_ratio <- try({
+    cf <- plot$coordinates
+    r <- tryCatch(cf$ratio, error = function(...) NULL)
+    if (is.null(r)) 1 else as.numeric(r)
+  }, silent = TRUE)
+  if (!is.numeric(aspect_ratio) || !is.finite(aspect_ratio) || aspect_ratio <= 0) aspect_ratio <- 1
+
+  # Compute width/height if one is missing to preserve aspect
+  width <- export_options$width
+  height <- export_options$height
+  if (is.null(width) && is.null(height)) {
+    # Sensible defaults maintaining aspect: base height, derive width
+    height <- 6
+    width <- height / aspect_ratio
+  } else if (is.null(width) && !is.null(height)) {
+    width <- height / aspect_ratio
+  } else if (!is.null(width) && is.null(height)) {
+    height <- width * aspect_ratio
+  }
+
+  # Choose device based on format to avoid ambiguity
+  fmt <- tolower(export_options$format)
+  device <- switch(fmt,
+    "tif" = grDevices::tiff,
+    "tiff" = grDevices::tiff,
+    "jpg" = grDevices::jpeg,
+    "jpeg" = grDevices::jpeg,
+    "png" = grDevices::png,
+    NULL
+  )
+
   tryCatch({
     ggplot2::ggsave(
       filename = file_path,
       plot = plot,
-      width = export_options$width,
-      height = export_options$height,
+      width = width,
+      height = height,
       dpi = export_options$dpi,
-      device = export_options$format
+      device = device
     )
     
     if (verbose) message("Plot exported successfully")

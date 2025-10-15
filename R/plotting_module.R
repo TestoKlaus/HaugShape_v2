@@ -43,6 +43,15 @@ plotting_ui <- function(id) {
           numericInput(ns("tick_margin"), "Tick margin", value = 0.05, min = 0, step = 0.01)
         ),
         box(
+          title = "Axis & Aspect",
+          status = "primary",
+          solidHeader = TRUE,
+          width = 12,
+          collapsible = TRUE,
+          collapsed = TRUE,
+          checkboxInput(ns("fixed_aspect"), "Lock aspect ratio 1:1 (prevents distortion)", value = TRUE)
+        ),
+        box(
           title = "Features - Hulls",
           status = "primary",
           solidHeader = TRUE,
@@ -114,9 +123,16 @@ plotting_ui <- function(id) {
           textInput(ns("export_filename"), "Filename (without extension)", value = "shape_plot_output"),
           uiOutput(ns("export_dir_ui")),
           textOutput(ns("export_dir_txt")),
-          selectInput(ns("export_format"), "Format", choices = c("tiff","png","jpg","pdf"), selected = "tiff"),
-          numericInput(ns("export_width"), "Width (inches)", value = 10, min = 1, step = 0.5),
-          numericInput(ns("export_height"), "Height (inches)", value = 8, min = 1, step = 0.5),
+          selectInput(ns("export_format"), "Format", choices = c("tiff","jpg"), selected = "tiff"),
+          checkboxInput(ns("export_custom_size"), "Set custom size (inches)", value = FALSE),
+          conditionalPanel(
+            condition = sprintf("input['%s']", ns("export_custom_size")),
+            ns = ns,
+            tagList(
+              numericInput(ns("export_width"), "Width (inches)", value = 8, min = 1, step = 0.5),
+              numericInput(ns("export_height"), "Height (inches)", value = 8, min = 1, step = 0.5)
+            )
+          ),
           numericInput(ns("export_dpi"), "DPI", value = 300, min = 72, step = 10)
         ),
         div(style = "margin: 10px 0;",
@@ -476,7 +492,8 @@ plotting_server <- function(id, data_reactive) {
         axis = list(
           linewidth = input$axis_linewidth,
           tick_length = input$tick_length,
-          tick_margin = input$tick_margin
+          tick_margin = input$tick_margin,
+          fixed_aspect = isTRUE(input$fixed_aspect)
         )
       )
 
@@ -613,8 +630,8 @@ plotting_server <- function(id, data_reactive) {
           if (!is.null(p) && nzchar(p)) p else NULL
         },
         format = input$export_format,
-        width = input$export_width,
-        height = input$export_height,
+        width = if (isTRUE(input$export_custom_size)) input$export_width else NULL,
+        height = if (isTRUE(input$export_custom_size)) input$export_height else NULL,
         dpi = input$export_dpi
       )
 
