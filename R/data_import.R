@@ -8,8 +8,10 @@
 #' @examples
 #' # In UI: data_import_ui("import")
 #' # In server: imported <- data_import_server("import")
+#' @name data_import
 NULL
 
+#' @rdname data_import
 #' @export
 data_import_ui <- function(id) {
   ns <- NS(id)
@@ -67,6 +69,7 @@ data_import_ui <- function(id) {
   )
 }
 
+#' @rdname data_import
 #' @export
 data_import_server <- function(id) {
   moduleServer(id, function(input, output, session) {
