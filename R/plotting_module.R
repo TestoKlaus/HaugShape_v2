@@ -51,11 +51,12 @@ plotting_ui <- function(id) {
           collapsed = TRUE,
           checkboxInput(ns("hulls_show"), "Show hulls", value = FALSE),
           uiOutput(ns("hull_groups_ui")),
-          # Per-group hull fill color pickers (if a group column is selected)
+          # Per-group controls for hulls
           uiOutput(ns("hull_group_fill_pickers")),
           uiOutput(ns("hull_group_border_pickers")),
-          numericInput(ns("hull_alpha"), "Hull alpha", value = 0.1, min = 0, max = 1, step = 0.05),
-          selectInput(ns("hull_linetype"), "Hull linetype", choices = c("solid","dashed","dotted","dotdash","longdash","twodash"), selected = "solid")
+          uiOutput(ns("hull_group_alpha_inputs")),
+          uiOutput(ns("hull_group_linetype_inputs")),
+          uiOutput(ns("hull_group_linewidth_inputs"))
         ),
         box(
           title = "Features - Contours",
@@ -66,7 +67,6 @@ plotting_ui <- function(id) {
           collapsed = TRUE,
           checkboxInput(ns("contours_show"), "Show contours", value = FALSE),
           uiOutput(ns("contour_groups_ui")),
-          # Per-group contour color pickers
           uiOutput(ns("contour_group_color_pickers")),
           numericInput(ns("contour_linewidth"), "Contour linewidth", value = 0.5, min = 0, step = 0.1)
         ),
@@ -253,6 +253,49 @@ plotting_server <- function(id, data_reactive) {
         inputId <- ns(paste0("hull_border_", safe_id(g)))
         label <- paste0("Hull border color: ", g)
         colourpicker::colourInput(inputId, label, value = "black")
+      })
+      do.call(tagList, picker_list)
+    })
+    # Per-group hull alpha inputs
+    output$hull_group_alpha_inputs <- renderUI({
+      df <- data_reactive(); req(df)
+      gcol <- input$group_col
+      if (is.null(gcol) || gcol == "" || !gcol %in% names(df)) return(NULL)
+      if (!isTRUE(input$hulls_show)) return(NULL)
+      groups <- input$hull_groups
+      if (is.null(groups) || length(groups) == 0) return(NULL)
+      safe_id <- function(x) gsub("[^A-Za-z0-9_]", "_", as.character(x))
+      picker_list <- lapply(groups, function(g) {
+        numericInput(ns(paste0("hull_alpha_", safe_id(g))), paste0("Hull alpha: ", g), value = 0.1, min = 0, max = 1, step = 0.05)
+      })
+      do.call(tagList, picker_list)
+    })
+    # Per-group hull linetype inputs
+    output$hull_group_linetype_inputs <- renderUI({
+      df <- data_reactive(); req(df)
+      gcol <- input$group_col
+      if (is.null(gcol) || gcol == "" || !gcol %in% names(df)) return(NULL)
+      if (!isTRUE(input$hulls_show)) return(NULL)
+      groups <- input$hull_groups
+      if (is.null(groups) || length(groups) == 0) return(NULL)
+      choices <- c("solid","dashed","dotted","dotdash","longdash","twodash")
+      safe_id <- function(x) gsub("[^A-Za-z0-9_]", "_", as.character(x))
+      picker_list <- lapply(groups, function(g) {
+        selectInput(ns(paste0("hull_linetype_", safe_id(g))), paste0("Hull linetype: ", g), choices = choices, selected = "solid")
+      })
+      do.call(tagList, picker_list)
+    })
+    # Per-group hull linewidth inputs
+    output$hull_group_linewidth_inputs <- renderUI({
+      df <- data_reactive(); req(df)
+      gcol <- input$group_col
+      if (is.null(gcol) || gcol == "" || !gcol %in% names(df)) return(NULL)
+      if (!isTRUE(input$hulls_show)) return(NULL)
+      groups <- input$hull_groups
+      if (is.null(groups) || length(groups) == 0) return(NULL)
+      safe_id <- function(x) gsub("[^A-Za-z0-9_]", "_", as.character(x))
+      picker_list <- lapply(groups, function(g) {
+        numericInput(ns(paste0("hull_linewidth_", safe_id(g))), paste0("Hull linewidth: ", g), value = 0.5, min = 0, step = 0.1)
       })
       do.call(tagList, picker_list)
     })
@@ -482,15 +525,48 @@ plotting_server <- function(id, data_reactive) {
         if (any(!is.na(cols))) contour_color_by_group <- cols[!is.na(cols)]
       }
 
+      # Collect per-group hull alpha/linetype/linewidth
+      hull_alpha_by_group <- NULL
+      hull_linetype_by_group <- NULL
+      hull_linewidth_by_group <- NULL
+      if (!is.null(input$hull_groups) && length(input$hull_groups) > 0) {
+        groups <- input$hull_groups
+        safe_id <- function(x) gsub("[^A-Za-z0-9_]", "_", as.character(x))
+        hull_alpha_vals <- vapply(groups, function(g) {
+          val <- input[[paste0("hull_alpha_", safe_id(g))]]
+          if (is.null(val)) NA_real_ else as.numeric(val)
+        }, numeric(1))
+        names(hull_alpha_vals) <- as.character(groups)
+        if (any(!is.na(hull_alpha_vals))) hull_alpha_by_group <- hull_alpha_vals[!is.na(hull_alpha_vals)]
+
+        hull_linetype_vals <- vapply(groups, function(g) {
+          val <- input[[paste0("hull_linetype_", safe_id(g))]]
+          if (is.null(val) || !nzchar(val)) NA_character_ else as.character(val)
+        }, character(1))
+        names(hull_linetype_vals) <- as.character(groups)
+        if (any(!is.na(hull_linetype_vals))) hull_linetype_by_group <- hull_linetype_vals[!is.na(hull_linetype_vals)]
+
+        hull_linewidth_vals <- vapply(groups, function(g) {
+          val <- input[[paste0("hull_linewidth_", safe_id(g))]]
+          if (is.null(val)) NA_real_ else as.numeric(val)
+        }, numeric(1))
+        names(hull_linewidth_vals) <- as.character(groups)
+        if (any(!is.na(hull_linewidth_vals))) hull_linewidth_by_group <- hull_linewidth_vals[!is.na(hull_linewidth_vals)]
+      }
+
+      # Build hulls list without fallbacks; let shape_plot defaults apply when not provided
+      hulls_list <- list(
+        show = isTRUE(input$hulls_show),
+        groups = input$hull_groups,
+        fill = if (!is.null(hull_fill_by_group)) hull_fill_by_group else NULL,
+        color = if (!is.null(hull_color_by_group)) hull_color_by_group else NULL
+      )
+      if (!is.null(hull_alpha_by_group)) hulls_list$alpha <- hull_alpha_by_group
+      if (!is.null(hull_linetype_by_group)) hulls_list$linetype <- hull_linetype_by_group
+      if (!is.null(hull_linewidth_by_group)) hulls_list$linewidth <- hull_linewidth_by_group
+
       features <- list(
-        hulls = list(
-          show = isTRUE(input$hulls_show),
-          groups = input$hull_groups,
-          fill = if (!is.null(hull_fill_by_group)) hull_fill_by_group else NULL,
-          color = if (!is.null(hull_color_by_group)) hull_color_by_group else NULL,
-          alpha = input$hull_alpha,
-          linetype = input$hull_linetype
-        ),
+        hulls = hulls_list,
         contours = list(
           show = isTRUE(input$contours_show),
           groups = input$contour_groups,

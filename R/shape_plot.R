@@ -246,7 +246,8 @@ shape_plot <- function(data,
       fill = default_colors,
       color = "black",
       alpha = 0.1,
-      linetype = "solid"
+      linetype = "solid",
+      linewidth = 0.5
     ),
     contours = list(
       show = FALSE,
@@ -274,6 +275,9 @@ shape_plot <- function(data,
   }
   if (is.null(features$contours$colors) || length(features$contours$colors) == 0) {
     features$contours$colors <- "black"
+  }
+  if (is.null(features$hulls$linewidth) || length(features$hulls$linewidth) == 0) {
+    features$hulls$linewidth <- 0.5
   }
   
   # Setup label defaults
@@ -549,7 +553,8 @@ shape_plot <- function(data,
           fill = params$features$hulls$fill[1],
           color = params$features$hulls$color[1],
           alpha = params$features$hulls$alpha[1],
-          linetype = params$features$hulls$linetype[1]
+          linetype = params$features$hulls$linetype[1],
+          size = params$features$hulls$linewidth[1]
         )
     } else if (verbose) {
       warning("Insufficient points for hull calculation (need >= 3)")
@@ -570,7 +575,11 @@ shape_plot <- function(data,
       hull_groups,
       function(n) rep("black", n)
     )
-    hull_alphas <- rep_len(params$features$hulls$alpha, length(hull_groups))
+    hull_alphas <- .resolve_group_vector(
+      params$features$hulls$alpha,
+      hull_groups,
+      function(n) rep(0.1, n)
+    )
     
     for (i in seq_along(hull_groups)) {
       group_val <- hull_groups[i]
@@ -592,7 +601,8 @@ shape_plot <- function(data,
               fill = hull_fills[i],
               color = hull_colors[i],
               alpha = hull_alphas[i],
-              linetype = params$features$hulls$linetype[1]
+              linetype = .resolve_group_vector(params$features$hulls$linetype, hull_groups, function(n) rep("solid", n))[i],
+              size = .resolve_group_vector(params$features$hulls$linewidth, hull_groups, function(n) rep(0.5, n))[i]
             )
         }, error = function(e) {
           if (verbose) warning("Failed to create hull for group ", group_val, ": ", e$message)
