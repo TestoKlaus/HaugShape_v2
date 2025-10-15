@@ -108,6 +108,10 @@ Haug_overview <- function(data,
     data, cols, group_col, group_vals, colors,
     point_style, text_style, hull_options, contour_options, export_options
   )
+  # Persist top-level fields that helpers rely on
+  params$cols <- cols
+  params$group_col <- group_col
+  params$plot_style <- plot_style
   
   if (verbose) {
     message("Starting Haug overview analysis...")
@@ -353,29 +357,50 @@ Haug_overview <- function(data,
 #' Create main hull plot
 #' @noRd
 .create_hull_plot <- function(data, col1, col2, title, params, x_label_adjust_y, tick_length) {
-  # This would call your shape_plot function
-  # For now, creating a placeholder that follows the same pattern
   tryCatch({
+    styling <- list(
+      plot_style = params$plot_style,
+      point = list(
+        color = params$point_style$color,
+        fill = params$point_style$fill,
+        shape = params$point_style$shape,
+        size = params$point_style$size
+      ),
+      text = list(
+        title_size = params$text_style$title_size,
+        label_size = params$text_style$label_size,
+        tick_size = params$text_style$tick_size
+      ),
+      axis = list(
+        linewidth = 1,
+        tick_length = tick_length,
+        tick_margin = 0.05,
+        central_axes = TRUE
+      )
+    )
+    features <- list(
+      hulls = list(show = TRUE, groups = params$group_vals, fill = params$colors, alpha = params$hull_options$alpha),
+      contours = list(show = FALSE),
+      shapes = list(show = FALSE)
+    )
+    labels <- list(
+      title = title,
+      x_label = col1,
+      y_label = col2,
+      x_adjust = c(0, x_label_adjust_y),
+      y_adjust = c(0, 0)
+    )
     shape_plot(
       data = data,
-      x_col = col1, 
+      x_col = col1,
       y_col = col2,
       group_col = params$group_col,
       group_vals = params$group_vals,
-      point_color = params$point_style$color,
-      point_fill = params$point_style$fill,
-      point_shape = params$point_style$shape,
-      point_size = params$point_style$size,
-      title = title,
-      title_size = params$text_style$title_size,
-      label_size = params$text_style$label_size,
-      tick_size = params$text_style$tick_size,
-      tick_length = tick_length,
-      show_hulls = TRUE,
-      hull_fill = params$colors,
-      hull_alpha = params$hull_options$alpha,
-      plot_style = params$plot_style,
-      x_label_adjust_y = x_label_adjust_y
+      styling = styling,
+      features = features,
+      labels = labels,
+      export_options = list(export = FALSE),
+      verbose = TRUE
     )
   }, error = function(e) {
     warning("Failed to create hull plot: ", e$message)
@@ -391,27 +416,49 @@ Haug_overview <- function(data,
   lapply(params$group_vals, function(group) {
     plot_title <- paste("Hull for Group", group, "(", col1, "vs", col2, ")")
     tryCatch({
+      styling <- list(
+        plot_style = params$plot_style,
+        point = list(
+          color = params$point_style$color,
+          fill = params$point_style$fill,
+          shape = params$point_style$shape,
+          size = params$point_style$size
+        ),
+        text = list(
+          title_size = params$text_style$title_size,
+          label_size = params$text_style$label_size,
+          tick_size = params$text_style$tick_size
+        ),
+        axis = list(
+          linewidth = 1,
+          tick_length = tick_length,
+          tick_margin = 0.05,
+          central_axes = TRUE
+        )
+      )
+      features <- list(
+        hulls = list(show = TRUE, groups = group, fill = params$colors, alpha = params$hull_options$alpha),
+        contours = list(show = FALSE),
+        shapes = list(show = FALSE)
+      )
+      labels <- list(
+        title = plot_title,
+        x_label = col1,
+        y_label = col2,
+        x_adjust = c(0, x_label_adjust_y),
+        y_adjust = c(0, 0)
+      )
       shape_plot(
         data = data,
         x_col = col1,
         y_col = col2,
         group_col = params$group_col,
-        group_vals = params$group_vals,
-        point_color = params$point_style$color,
-        point_fill = params$point_style$fill,
-        point_shape = params$point_style$shape,
-        point_size = params$point_style$size,
-        title = plot_title,
-        title_size = params$text_style$title_size,
-        label_size = params$text_style$label_size,
-        tick_size = params$text_style$tick_size,
-        tick_length = tick_length,
-        show_hulls = TRUE,
-        hull_fill = params$colors,
-        hull_alpha = params$hull_options$alpha,
-        plot_style = params$plot_style,
-        show_hull_for_groups = group,
-        x_label_adjust_y = x_label_adjust_y
+        group_vals = group,
+        styling = styling,
+        features = features,
+        labels = labels,
+        export_options = list(export = FALSE),
+        verbose = TRUE
       )
     }, error = function(e) {
       warning("Failed to create individual hull plot for group ", group, ": ", e$message)
@@ -425,43 +472,66 @@ Haug_overview <- function(data,
 .create_contour_plots <- function(data, col1, col2, params, x_label_adjust_y, y_label_adjust_x, tick_length) {
   if (is.null(params$group_vals)) return(NULL)
   
-  # Calculate sample counts
-  sample_counts <- data %>%
-    dplyr::filter(!!rlang::sym(params$group_col) %in% params$group_vals) %>%
-    dplyr::count(!!rlang::sym(params$group_col)) %>%
-    dplyr::rename(group = !!rlang::sym(params$group_col), count = n)
+  # Calculate sample counts (base R to avoid NSE deps)
+  if (!is.null(params$group_col) && params$group_col %in% names(data)) {
+    df_counts <- data[data[[params$group_col]] %in% params$group_vals, , drop = FALSE]
+    tab <- as.data.frame(table(df_counts[[params$group_col]]), stringsAsFactors = FALSE)
+    names(tab) <- c("group", "count")
+    sample_counts <- tab
+  } else {
+    sample_counts <- data.frame(group = NA, count = nrow(data))
+  }
   
   lapply(params$group_vals, function(group) {
-    count <- sample_counts %>% 
-      dplyr::filter(group == !!group) %>% 
-      dplyr::pull(count)
+    count <- sample_counts$count[sample_counts$group == group]
     count <- if(length(count) == 0) 0 else count
     
     plot_title <- paste("Contours for Group", group, "(", col1, "vs", col2, ", n =", count, ")")
     
     tryCatch({
+      styling <- list(
+        plot_style = params$plot_style,
+        point = list(
+          color = params$point_style$color,
+          fill = params$point_style$fill,
+          shape = params$point_style$shape,
+          size = params$point_style$size
+        ),
+        text = list(
+          title_size = params$text_style$title_size,
+          label_size = params$text_style$label_size,
+          tick_size = params$text_style$tick_size
+        ),
+        axis = list(
+          linewidth = 1,
+          tick_length = tick_length,
+          tick_margin = 0.05,
+          central_axes = TRUE
+        )
+      )
+      features <- list(
+        hulls = list(show = FALSE),
+        contours = list(show = TRUE, groups = group, colors = params$colors, linewidth = params$contour_options$linewidth),
+        shapes = list(show = FALSE)
+      )
+      labels <- list(
+        title = plot_title,
+        x_label = col1,
+        y_label = col2,
+        x_adjust = c(0, x_label_adjust_y),
+        y_adjust = c(y_label_adjust_x, 0)
+      )
       shape_plot(
         data = data,
         x_col = col1,
         y_col = col2,
         group_col = params$group_col,
         group_vals = params$group_vals,
-        point_color = params$point_style$color,
-        point_fill = params$point_style$fill,
-        point_shape = params$point_style$shape,
-        point_size = params$point_style$size,
-        title = plot_title,
-        title_size = params$text_style$title_size,
-        label_size = params$text_style$label_size,
-        tick_size = params$text_style$tick_size,
-        tick_length = tick_length,
-        show_contours = TRUE,
-        contour_colors = params$colors,
-        contour_linewidth = params$contour_options$linewidth,
-        show_contours_for_groups = group,
-        plot_style = params$plot_style,
-        x_label_adjust_y = x_label_adjust_y,
-        y_label_adjust_x = y_label_adjust_x
+        styling = styling,
+        features = features,
+        labels = labels,
+        export_options = list(export = FALSE),
+        verbose = TRUE
       )
     }, error = function(e) {
       warning("Failed to create contour plot for group ", group, ": ", e$message)
@@ -639,13 +709,19 @@ Haug_overview <- function(data,
     
     # Print tables if available
     if (!is.null(tables) && length(tables) > 0) {
-      for (table_name in names(tables)) {
-        if (!is.null(tables[[table_name]])) {
-          # Create a text plot of the table
-          # This is a simplified approach - you might want to use gridExtra::tableGrob
-          print(tables[[table_name]])
+        for (table_name in names(tables)) {
+          tbl_obj <- tables[[table_name]]
+          if (is.null(tbl_obj)) next
+          # If this looks like a hull_specimen_table_result, print its pages
+          if (inherits(tbl_obj, "hull_specimen_table_result") && !is.null(tbl_obj$tables)) {
+            for (pg in tbl_obj$tables) {
+              if (!is.null(pg)) print(pg)
+            }
+          } else {
+            # Fallback: try to print the object as-is
+            print(tbl_obj)
+          }
         }
-      }
     }
     
     dev.off()
