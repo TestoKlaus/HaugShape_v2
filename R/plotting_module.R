@@ -148,6 +148,22 @@ plotting_ui <- function(id) {
           br(),
           verbatimTextOutput(ns("messages"))
         )
+      ),
+      column(
+        width = 12,
+        box(
+          title = "Legend / Info",
+          status = "info",
+          solidHeader = TRUE,
+          width = 12,
+          collapsible = TRUE,
+          collapsed = FALSE,
+          helpText("Summary of what is currently displayed in the plot."),
+          verbatimTextOutput(ns("legend_text")),
+          div(style = "margin-top:8px;",
+              actionButton(ns("show_hull_specimens"), "Show hull specimens", class = "btn-primary")
+          )
+        )
       )
     )
   )
@@ -424,6 +440,7 @@ plotting_server <- function(id, data_reactive) {
     # Render plot
     plot_obj <- reactiveVal(NULL)
     messages <- reactiveVal("")
+    legend_info <- reactiveVal(NULL)
 
     observeEvent(input$render, {
       df <- data_reactive()
@@ -656,6 +673,37 @@ plotting_server <- function(id, data_reactive) {
       })
 
       plot_obj(p)
+
+      # Build legend info summary
+      # Determine used groups and aesthetic mappings applied
+      lg <- list()
+      if (!is.null(gcol) && nzchar(gcol)) {
+        used_groups <- if (!is.null(gvals) && length(gvals)) gvals else unique(df[[gcol]])
+        # Build per-group aesthetics from input pickers if present; fallback to automatic palette
+        safe_id <- function(x) gsub("[^A-Za-z0-9_]", "_", as.character(x))
+        get_or <- function(id, default) { val <- input[[id]]; if (is.null(val) || (is.character(val) && !nzchar(val))) default else val }
+        # Colors
+        if (isTRUE(colourpicker_ready())) {
+          cols <- setNames(vapply(used_groups, function(g) get_or(paste0("point_color_", safe_id(g)), NA_character_), character(1)), as.character(used_groups))
+          fills <- setNames(vapply(used_groups, function(g) get_or(paste0("point_fill_", safe_id(g)), NA_character_), character(1)), as.character(used_groups))
+        } else {
+          cols <- setNames(rep(NA_character_, length(used_groups)), as.character(used_groups))
+          fills <- cols
+        }
+        # Shapes
+        shapes <- setNames(vapply(used_groups, function(g) {
+          v <- input[[paste0("point_shape_", safe_id(g))]]
+          if (is.null(v)) NA_real_ else suppressWarnings(as.numeric(v))
+        }, numeric(1)), as.character(used_groups))
+
+        lg$groups <- used_groups
+        lg$colors <- cols
+        lg$fills <- fills
+        lg$shapes <- shapes
+        lg$group_col <- gcol
+      }
+
+      legend_info(lg)
     })
 
     output$plot <- renderPlot({
@@ -664,6 +712,65 @@ plotting_server <- function(id, data_reactive) {
     })
 
     output$messages <- renderText({ messages() })
+
+    output$legend_text <- renderText({
+      lg <- legend_info()
+      if (is.null(lg) || is.null(lg$groups)) return("No grouping applied; legend not required.")
+      fmt_shape <- function(s) ifelse(is.na(s), "(default)", as.character(s))
+      fmt_col <- function(c) ifelse(is.na(c) || !nzchar(c), "(auto)", c)
+      lines <- c(
+        paste0("Grouping by: ", lg$group_col),
+        paste0("Groups (n=", length(lg$groups), "):")
+      )
+      for (g in lg$groups) {
+        lines <- c(lines, paste0("  - ", g, ": color=", fmt_col(lg$colors[[as.character(g)]]), ", fill=", fmt_col(lg$fills[[as.character(g)]]), ", shape=", fmt_shape(lg$shapes[[as.character(g)]])))
+      }
+      paste(lines, collapse = "\n")
+    })
+
+    observeEvent(input$show_hull_specimens, {
+      df <- data_reactive(); req(df)
+      gcol <- input$group_col; req(nzchar(gcol))
+      x_col <- input$x_col; y_col <- input$y_col
+      gvals <- input$group_vals
+      # Default groups if none explicitly selected
+      if (is.null(gvals) || !length(gvals)) gvals <- unique(df[[gcol]])
+      res <- try(get_hull_specimen_table(
+        data = df,
+        x_cols = x_col,
+        y_cols = y_col,
+        group_col = gcol,
+        group_vals = gvals,
+        verbose = FALSE
+      ), silent = TRUE)
+      if (inherits(res, "try-error")) {
+        showModal(modalDialog(title = "Hull specimens", "Failed to compute hull specimens."))
+        return()
+      }
+      # Prefer a light textual summary if ggpubr tables aren't available
+      text_summary <- NULL
+      if (!requireNamespace("ggpubr", quietly = TRUE)) {
+        sumdf <- res$summary
+        text_summary <- paste0(
+          "Total sections: ", if (!is.null(sumdf) && nrow(sumdf)) sumdf$value[sumdf$metric == "Total sections"] else NA,
+          "\nTotal rows: ", if (!is.null(sumdf) && nrow(sumdf)) sumdf$value[sumdf$metric == "Total rows"] else NA
+        )
+      }
+      ui <- if (!is.null(text_summary)) {
+        tagList(pre(text_summary))
+      } else {
+        # ggpubr tables exist; render the first page to keep it small
+        if (length(res$tables) > 0 && inherits(res$tables[[1]], "ggplot")) {
+          plotOutput(ns("hull_table_plot"), height = 300)
+        } else {
+          pre("No table available.")
+        }
+      }
+      showModal(modalDialog(title = "Hull specimens (first page)", size = "l", easyClose = TRUE, footer = modalButton("Close"), ui))
+      if (length(res$tables) > 0 && inherits(res$tables[[1]], "ggplot")) {
+        output$hull_table_plot <- renderPlot({ print(res$tables[[1]]) })
+      }
+    })
 
     invisible(list(plot = plot_obj))
   })
