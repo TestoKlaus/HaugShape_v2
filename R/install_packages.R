@@ -26,7 +26,8 @@ install_haugshape_packages <- function(force_reinstall = FALSE, verbose = TRUE) 
     cran_packages = c(
       "dplyr",           # Data manipulation
       "ggplot2",         # Plotting
-      "readxl",          # Excel file reading
+      "readxl",          # Excel file reading (some code may reference it)
+      "openxlsx",        # Excel read/write used in data_import.R & shape_analysis.R
       "DT",              # Data tables
       "plotly"           # Interactive plots
     ),
@@ -37,7 +38,8 @@ install_haugshape_packages <- function(force_reinstall = FALSE, verbose = TRUE) 
       "shinydashboard",  # Dashboard framework
       "shinyWidgets",    # Enhanced widgets
       "shinycssloaders", # Loading animations
-      "colourpicker"     # Color selection
+      "colourpicker",    # Color selection
+      "shinyFiles"       # File/Dir chooser used in modules
     ),
     
     # Morphometric analysis packages

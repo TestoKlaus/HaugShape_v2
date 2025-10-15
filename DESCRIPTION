@@ -1,4 +1,4 @@
-Package: HaugShape
+Package: HaugShapeV2
 Type: Package
 Title: Morphometric Shape Analysis and Visualization Tools
 Version: 0.1.0
@@ -21,6 +21,11 @@ Imports:
     dplyr,
     tidyr,
     openxlsx,
+    magick,
+    shinyFiles,
+    shinyWidgets,
+    shinycssloaders,
+    colourpicker,
     shiny,
     shinydashboard,
     DT,
