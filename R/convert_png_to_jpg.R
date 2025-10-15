@@ -421,3 +421,51 @@ convert_png_to_image <- function(input_path,
     magick::image_write(img, path = output_path, format = "bmp")
   }
 }
+
+
+# Compatibility wrapper ----------------------------------------------------
+
+#' Convert PNG to JPG (compatibility wrapper)
+#'
+#' This function maintains backward compatibility with older code that called
+#' `convert_png_to_jpg()`. It simply forwards to [convert_png_to_image()],
+#' forcing `format = "jpg"` while exposing the same parameters (except `format`).
+#'
+#' @inheritParams convert_png_to_image
+#'
+#' @return See [convert_png_to_image()]. Returns a data.frame with per-file results.
+#'
+#' @examples
+#' \dontrun{
+#' convert_png_to_jpg(
+#'   input_path = "path/to/images",
+#'   output_dir = "path/to/output",
+#'   dimensions = list(width = 800),
+#'   padding = 10,
+#'   quality = 95
+#' )
+#' }
+#'
+#' @export
+convert_png_to_jpg <- function(input_path,
+                               output_dir = NULL,
+                               dimensions = list(width = 800),
+                               padding = 10,
+                               quality = 95,
+                               background = "white",
+                               batch_processing = TRUE,
+                               overwrite = FALSE,
+                               verbose = TRUE) {
+  convert_png_to_image(
+    input_path = input_path,
+    output_dir = output_dir,
+    dimensions = dimensions,
+    padding = padding,
+    format = "jpg",
+    quality = quality,
+    background = background,
+    batch_processing = batch_processing,
+    overwrite = overwrite,
+    verbose = verbose
+  )
+}

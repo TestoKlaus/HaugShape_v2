@@ -5,8 +5,10 @@
 #'
 #' @param id Module id
 #' @return Invisibly returns a reactive containing the last results table
+#' @name image_processing
 NULL
 
+#' @rdname image_processing
 #' @export
 image_processing_ui <- function(id) {
   ns <- NS(id)
@@ -49,6 +51,7 @@ image_processing_ui <- function(id) {
   )
 }
 
+#' @rdname image_processing
 #' @export
 image_processing_server <- function(id) {
   moduleServer(id, function(input, output, session) {
