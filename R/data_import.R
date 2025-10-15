@@ -349,6 +349,9 @@ data_import_server <- function(id) {
       data_reactive()
     })
 
+    # DataTable proxy for efficient updates after edits
+    proxy <- DT::dataTableProxy("preview", session = session)
+
     # Render preview table
     output$preview <- DT::renderDT({
       df <- working_data(); if (is.null(df)) df <- effective_data(); req(nrow(df) > 0)
@@ -361,7 +364,13 @@ data_import_server <- function(id) {
       # Disable editing for problematic columns
       non_editable <- which(names(display_df) %in% c("shape"))
       # DT editable toggle
-      edit_cfg <- if (isTRUE(input$enable_edit)) list(target = "cell", disable = list(columns = non_editable)) else FALSE
+      if (isTRUE(input$enable_edit)) {
+        # DataTables expects 0-based column indices for disabling edits
+        disabled_cols <- if (length(non_editable)) (non_editable - 1L) else NULL
+        edit_cfg <- list(target = "cell", disable = list(columns = disabled_cols))
+      } else {
+        edit_cfg <- FALSE
+      }
 
       # When editing enabled, disable ordering/filter to keep row indices stable
       page_len <- if (!is.null(input$n_rows)) input$n_rows else 20
@@ -400,6 +409,12 @@ data_import_server <- function(id) {
         }
         df[r, j] <- new_val
         working_data(df)
+        # Update the rendered table in place to avoid full re-render and scroll jumps
+        display_df <- df
+        if ("shape" %in% names(display_df) && is.list(display_df$shape)) {
+          display_df$shape <- vapply(display_df$shape, function(x) if (is.null(x)) "NULL" else "Out", character(1))
+        }
+        DT::replaceData(proxy, display_df, resetPaging = FALSE, rownames = FALSE)
       })
     })
 
