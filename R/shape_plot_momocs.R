@@ -176,7 +176,7 @@ shape_plot_momocs <- function(pca_result,
   base_plot <- .create_momocs_base_plot(pca_data, params, verbose)
   
   # Add shapes to plot ----
-  final_plot <- .add_shapes_to_plot(base_plot, coo_object, shape_positions, pca_data, params, verbose)
+  final_plot <- .add_momocs_shapes_to_plot(base_plot, coo_object, shape_positions, pca_data, params, verbose)
   
   # Export if requested ----
   if (params$export_options$export) {
@@ -795,7 +795,7 @@ shape_plot_momocs <- function(pca_result,
 
 #' Add shapes to the plot
 #' @noRd
-.add_shapes_to_plot <- function(plot, coo_object, shape_positions, pca_data, params, verbose) {
+.add_momocs_shapes_to_plot <- function(plot, coo_object, shape_positions, pca_data, params, verbose) {
   
   n_shapes <- length(shape_positions$indices)
   

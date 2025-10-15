@@ -35,12 +35,23 @@ data_import_ui <- function(id) {
             inputId = ns("n_rows"),
             label = "Preview rows",
             min = 5, max = 100, value = 20, step = 5
-          ),
-          checkboxInput(
-            inputId = ns("show_types"),
-            label = "Show column types",
-            value = FALSE
           )
+        ),
+        box(
+          title = "Map shapes to data",
+          status = "primary",
+          solidHeader = TRUE,
+          width = 12,
+          collapsible = TRUE,
+          collapsed = TRUE,
+          uiOutput(ns("id_col_ui")),
+          uiOutput(ns("shape_dir_ui")),
+          textOutput(ns("shape_dir_txt")),
+          div(style = "margin: 6px 0;",
+              actionButton(ns("map_shapes_btn"), "Map shapes", class = "btn-primary")
+          ),
+          br(),
+          verbatimTextOutput(ns("mapping_summary"))
         ),
         box(
           title = "Data Preview",
@@ -49,8 +60,7 @@ data_import_ui <- function(id) {
           width = 12,
           collapsible = TRUE,
           DT::DTOutput(ns("preview")),
-          br(),
-          uiOutput(ns("types_ui"))
+          br()
         )
       )
     )
@@ -121,11 +131,129 @@ data_import_server <- function(id) {
       df
     })
 
+    # Dynamic ID column selector once data is available
+    output$id_col_ui <- renderUI({
+      df <- data_reactive(); req(df)
+      selectInput(ns("id_col"), "ID column for shape filenames", choices = names(df), selected = names(df)[1])
+    })
+
+    # shinyFiles directory picker for shape folder
+    shinyfiles_ready <- reactiveVal(FALSE)
+    observe({
+      ready <- requireNamespace("shinyFiles", quietly = TRUE)
+      if (!isTRUE(ready)) {
+        try(install.packages("shinyFiles", repos = "https://cran.r-project.org", quiet = TRUE), silent = TRUE)
+        ready <- requireNamespace("shinyFiles", quietly = TRUE)
+      }
+      shinyfiles_ready(isTRUE(ready))
+    })
+    output$shape_dir_ui <- renderUI({
+      if (!isTRUE(shinyfiles_ready())) return(helpText("Directory picker unavailable"))
+      shinyFiles::shinyDirButton(ns("shape_dir"), label = "Choose shape folder", title = "Select shape folder")
+    })
+    shape_dir_path <- reactiveVal("")
+    observeEvent(shinyfiles_ready(), {
+      if (!isTRUE(shinyfiles_ready())) return()
+      roots <- try(shinyFiles::getVolumes()(), silent = TRUE)
+      if (inherits(roots, "try-error") || is.null(roots) || length(roots) == 0) {
+        roots <- c()
+      }
+      if (.Platform$OS.type == "windows" && dir.exists("C:/")) {
+        roots <- c(`C:` = "C:/", roots)
+      }
+      roots <- c(roots, Home = normalizePath("~"), `Working Dir` = normalizePath(getwd()))
+      shinyFiles::shinyDirChoose(input, id = "shape_dir", roots = roots, session = session)
+    })
+    observeEvent(input$shape_dir, {
+      req(shinyfiles_ready())
+      roots <- try(shinyFiles::getVolumes()(), silent = TRUE)
+      if (inherits(roots, "try-error") || is.null(roots) || length(roots) == 0) {
+        roots <- c()
+      }
+      if (.Platform$OS.type == "windows" && dir.exists("C:/")) {
+        roots <- c(`C:` = "C:/", roots)
+      }
+      roots <- c(roots, Home = normalizePath("~"), `Working Dir` = normalizePath(getwd()))
+      sel <- try(shinyFiles::parseDirPath(roots, input$shape_dir), silent = TRUE)
+      if (!inherits(sel, "try-error") && length(sel) > 0) shape_dir_path(as.character(sel))
+    })
+    output$shape_dir_txt <- renderText({
+      p <- shape_dir_path()
+      if (is.null(p) || !nzchar(p)) "No folder selected" else p
+    })
+
+    # Hold mapped data and summary
+    mapped_data <- reactiveVal(NULL)
+    mapping_summary <- reactiveVal(NULL)
+
+    observeEvent(input$map_shapes_btn, {
+      df <- data_reactive(); req(df)
+      id_col <- input$id_col; req(id_col)
+      shp_dir <- shape_dir_path(); req(nzchar(shp_dir))
+
+      # Ensure Momocs is available
+      if (!requireNamespace("Momocs", quietly = TRUE)) {
+        try(install.packages("Momocs", repos = "https://cran.r-project.org", quiet = TRUE), silent = TRUE)
+      }
+      validate(need(requireNamespace("Momocs", quietly = TRUE), "Package 'Momocs' is required and could not be installed automatically."))
+
+      # Fixed options (simple defaults); can be adjusted here if needed
+      opts <- list(
+        recursive = FALSE,
+        case_sensitive = FALSE,
+        fail_on_missing = FALSE,
+        validate_shapes = TRUE
+      )
+
+      result <- tryCatch({
+        map_shapes_to_data(
+          data = df,
+          id_col = id_col,
+          shape_folder = shp_dir,
+          shape_col = "shape",
+          options = opts,
+          verbose = TRUE
+        )
+      }, error = function(e) {
+        showNotification(paste("Shape mapping failed:", conditionMessage(e)), type = "error")
+        NULL
+      })
+
+      if (!is.null(result)) {
+        mapped_data(result)
+        mapping_summary(attr(result, "mapping_summary"))
+        showNotification("Shape mapping completed", type = "message")
+      }
+    })
+
+    output$mapping_summary <- renderText({
+      s <- mapping_summary(); if (is.null(s)) return("")
+      paste0(
+        "Rows: ", s$total_rows,
+        " | Files found: ", s$files_found,
+        " | Successful: ", s$successful_mappings,
+        " | Failed imports: ", s$failed_imports,
+        " | Missing: ", s$missing_shapes,
+        " | Rate: ", s$mapping_rate, "%"
+      )
+    })
+
+    # Effective data to use downstream: prefer mapped data when available
+    effective_data <- reactive({
+      md <- mapped_data()
+      if (!is.null(md)) return(md)
+      data_reactive()
+    })
+
     # Render preview table
     output$preview <- DT::renderDT({
-      df <- data_reactive()
+      df <- effective_data()
       req(nrow(df) > 0)
       n <- if (!is.null(input$n_rows)) input$n_rows else 20
+      # Make list-based shape columns preview-friendly
+      if ("shape" %in% names(df) && is.list(df[["shape"]])) {
+        df$shape <- vapply(df$shape, function(x) if (is.null(x)) "NULL" else "Out", character(1))
+      }
       DT::datatable(
         head(df, n),
         options = list(pageLength = min(10, n), scrollX = TRUE),
@@ -135,21 +263,11 @@ data_import_server <- function(id) {
       )
     })
 
-    # Show column types if requested
-    output$types_ui <- renderUI({
-      req(input$show_types)
-      df <- data_reactive()
-      req(df)
-      types <- vapply(df, function(x) paste(class(x), collapse = ", "), character(1))
-      tags$div(
-        tags$h4("Column types"),
-        tags$pre(paste(sprintf("%s: %s", names(types), types), collapse = "\n"))
-      )
-    })
+    # Types preview removed as requested
 
     # Return a list of reactives for downstream use
     return(list(
-      data = data_reactive
+      data = effective_data
     ))
   })
 }

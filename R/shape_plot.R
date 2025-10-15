@@ -259,6 +259,7 @@ shape_plot <- function(data,
       show = FALSE,
       groups = group_vals,
       shape_col = "shape",
+      only_hull = TRUE,
       size = 0.01,
       shift = 0.1,
       x_adjust = 0,
@@ -692,18 +693,131 @@ shape_plot <- function(data,
 #' Add shapes to the plot
 #' @noRd
 .add_shapes_to_plot <- function(plot, data, x_col, y_col, group_col, params, verbose) {
-  
+
   shape_col <- params$features$shapes$shape_col
-  
   if (!shape_col %in% colnames(data)) {
     if (verbose) warning("Shape column '", shape_col, "' not found in data")
     return(plot)
   }
-  
-  # This is a complex feature that would need the actual shape data structure
-  # For now, adding a placeholder that can be extended based on your shape data format
-  if (verbose) message("Shape overlay feature needs implementation based on your shape data structure")
-  
+
+  # Filter rows to groups (if provided)
+  draw_data <- data
+  if (!is.null(group_col) && !is.null(params$features$shapes$groups)) {
+    draw_groups <- params$features$shapes$groups
+    draw_data <- draw_data %>% dplyr::filter(!!rlang::sym(group_col) %in% draw_groups)
+  }
+
+  # If only_hull is requested, keep only the rows that form convex hull per group (or globally if no grouping)
+  if (isTRUE(params$features$shapes$only_hull)) {
+    if (!is.null(group_col)) {
+      draw_data <- draw_data %>% dplyr::group_by(!!rlang::sym(group_col)) %>% dplyr::group_map(~{
+        df <- .x
+        if (nrow(df) >= 3) {
+          idx <- tryCatch(grDevices::chull(df[[x_col]], df[[y_col]]), error = function(...) integer())
+          if (length(idx)) df[idx, , drop = FALSE] else df[0, , drop = FALSE]
+        } else df[0, , drop = FALSE]
+      }) %>% dplyr::bind_rows()
+    } else {
+      if (nrow(draw_data) >= 3) {
+        idx <- tryCatch(grDevices::chull(draw_data[[x_col]], draw_data[[y_col]]), error = function(...) integer())
+        draw_data <- if (length(idx)) draw_data[idx, , drop = FALSE] else draw_data[0, , drop = FALSE]
+      } else {
+        draw_data <- draw_data[0, , drop = FALSE]
+      }
+    }
+  }
+
+  # Keep only rows that have a shape object
+  if (!is.list(draw_data[[shape_col]])) {
+    if (verbose) warning("Column '", shape_col, "' is not a list of shapes; skipping overlay")
+    return(plot)
+  }
+
+  # Extract parameters for positioning and scaling (defaults assured in setup)
+  s_size <- as.numeric(params$features$shapes$size)
+  s_shift <- as.numeric(params$features$shapes$shift)
+  s_xadj <- as.numeric(params$features$shapes$x_adjust)
+  s_yadj <- as.numeric(params$features$shapes$y_adjust)
+
+  # Compute global scale in data units (use overall range)
+  xr <- range(data[[x_col]], na.rm = TRUE)
+  yr <- range(data[[y_col]], na.rm = TRUE)
+  scale_fac <- s_size * max(diff(xr), diff(yr))
+  if (!is.finite(scale_fac) || scale_fac <= 0) scale_fac <- s_size
+
+  # Helper to safely extract coords from a Momocs Out object
+  get_coords <- function(shape_obj) {
+    # Expect an 'Out' with $coo[[1]] as a matrix of x,y
+    if (is.null(shape_obj)) return(NULL)
+    # Try typical slot
+    coords <- try({ shape_obj$coo[[1]] }, silent = TRUE)
+    if (inherits(coords, "try-error") || is.null(coords)) {
+      # Try generic extraction
+      coords <- try({ if (!is.null(shape_obj$coo)) shape_obj$coo[[1]] else NULL }, silent = TRUE)
+    }
+    if (is.null(coords) || !is.matrix(coords) || ncol(coords) != 2) return(NULL)
+    coords
+  }
+
+  # Build a combined data frame of transformed polygon coordinates for all rows
+  shape_rows <- which(vapply(draw_data[[shape_col]], function(x) !is.null(x), logical(1)))
+  if (length(shape_rows) == 0) {
+    if (verbose) message("No shapes to draw (all NULL)")
+    return(plot)
+  }
+
+  poly_list <- list()
+  idx <- 1L
+  for (i in shape_rows) {
+    shp <- draw_data[[shape_col]][[i]]
+    coords <- get_coords(shp)
+    if (is.null(coords)) next
+
+    # Center and scale coordinates
+    coords <- coords[is.finite(coords[,1]) & is.finite(coords[,2]), , drop = FALSE]
+    if (nrow(coords) < 3) next
+    center <- colMeans(coords, na.rm = TRUE)
+    rel <- sweep(coords, 2, center, FUN = "-")
+    rel <- rel * scale_fac
+
+    # Determine offset position for this row
+    px <- as.numeric(draw_data[[x_col]][i])
+    py <- as.numeric(draw_data[[y_col]][i])
+    if (!is.finite(px) || !is.finite(py)) next
+
+    # Shift away from the point along direction from origin; fallback to upward
+    vx <- px; vy <- py
+    vlen <- sqrt(vx^2 + vy^2)
+    if (!is.finite(vlen) || vlen == 0) { vx <- 0; vy <- 1; vlen <- 1 }
+    ux <- vx / vlen; uy <- vy / vlen
+    offx <- px + s_shift * ux + s_xadj
+    offy <- py + s_shift * uy + s_yadj
+
+    final <- cbind(rel[,1] + offx, rel[,2] + offy)
+    poly_list[[idx]] <- data.frame(
+      sx = final[,1], sy = final[,2],
+      .shape_id = idx,
+      stringsAsFactors = FALSE
+    )
+    idx <- idx + 1L
+  }
+
+  if (length(poly_list) == 0) return(plot)
+  shape_df <- dplyr::bind_rows(poly_list)
+
+  # Basic styling for shapes (future: expose in UI)
+  shape_border_color <- "black"
+  shape_linewidth <- 0.3
+  plot <- plot +
+    ggplot2::geom_polygon(
+      data = shape_df,
+      ggplot2::aes(x = sx, y = sy, group = .shape_id),
+      inherit.aes = FALSE,
+      fill = "black",
+      color = shape_border_color,
+      linewidth = shape_linewidth
+    )
+
   return(plot)
 }
 
