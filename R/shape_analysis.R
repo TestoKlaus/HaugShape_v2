@@ -337,20 +337,24 @@ shape_analysis <- function(shape_dir,
 #' Perform Principal Component Analysis
 #' @noRd
 .perform_pca <- function(efa_results, verbose) {
-  # First attempt with scaling; if zero-variance columns cause an error, retry without scaling
+  # First attempt with scaling; on any error, retry without scaling.
+  # Some R installations/locales emit non-English messages (e.g., German),
+  # so pattern matching may miss zero-variance errors. We fallback regardless.
   tryCatch({
     pca_results <- Momocs::PCA(efa_results, center = TRUE, scale. = TRUE)
     if (verbose) message("PCA completed successfully")
     return(pca_results)
-  }, error = function(e) {
-    msg <- conditionMessage(e)
-    if (grepl("zero column|constant/zero", msg, ignore.case = TRUE)) {
-      if (verbose) message("Zero-variance descriptors detected; retrying PCA without scaling...")
-      pca_results2 <- Momocs::PCA(efa_results, center = TRUE, scale. = FALSE)
-      if (verbose) message("PCA completed successfully (no scaling)")
-      return(pca_results2)
-    }
-    stop("Principal Component Analysis failed: ", msg, call. = FALSE)
+  }, error = function(e1) {
+    msg1 <- conditionMessage(e1)
+    if (verbose) message("PCA with scaling failed (", msg1, "); retrying without scaling...")
+    # Retry without scaling
+    pca_results2 <- tryCatch({
+      Momocs::PCA(efa_results, center = TRUE, scale. = FALSE)
+    }, error = function(e2) {
+      stop("Principal Component Analysis failed: ", conditionMessage(e2), call. = FALSE)
+    })
+    if (verbose) message("PCA completed successfully (no scaling)")
+    return(pca_results2)
   })
 }
 
