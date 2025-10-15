@@ -697,26 +697,34 @@ plotting_server <- function(id, data_reactive) {
           if (is.null(v)) 21 else suppressWarnings(as.numeric(v))
         }, numeric(1)), used_groups)
 
-        # Compute hull specimens for each group at current X/Y
+        # Compute hull specimens only for groups that have hulls enabled/selected
         xcol <- x_col; ycol <- y_col
-        specimen_rows <- lapply(used_groups, function(gv) {
+        hulls_on <- isTRUE(input$hulls_show)
+        hull_groups <- input$hull_groups
+        specimen_groups <- if (hulls_on) {
+          if (!is.null(hull_groups) && length(hull_groups) > 0) intersect(used_groups, as.character(hull_groups)) else used_groups
+        } else character(0)
+        specimen_rows <- list()
+        for (gv in specimen_groups) {
           gd <- df[df[[gcol]] == gv, , drop = FALSE]
           gd <- gd[is.finite(gd[[xcol]]) & is.finite(gd[[ycol]]), , drop = FALSE]
-          if (nrow(gd) < 1) return(data.frame())
           if (nrow(gd) >= 3) {
             idx <- tryCatch(grDevices::chull(gd[[xcol]], gd[[ycol]]), error = function(...) integer())
-            if (length(idx)) gd[idx, c(1, match(xcol, names(gd)), match(ycol, names(gd))) , drop = FALSE] else gd[0, , drop = FALSE]
+            sp <- if (length(idx)) gd[idx, c(1, match(xcol, names(gd)), match(ycol, names(gd))) , drop = FALSE] else gd[0, , drop = FALSE]
+          } else if (nrow(gd) > 0) {
+            sp <- gd[, c(1, match(xcol, names(gd)), match(ycol, names(gd))) , drop = FALSE]
           } else {
-            gd[, c(1, match(xcol, names(gd)), match(ycol, names(gd))) , drop = FALSE]
+            sp <- gd
           }
-        })
-        names(specimen_rows) <- used_groups
+          specimen_rows[[gv]] <- sp
+        }
 
         lg$groups <- used_groups
         lg$colors <- cols
         lg$fills <- fills
         lg$shapes <- shapes
-        lg$specimens <- specimen_rows
+  lg$specimens <- specimen_rows
+  lg$specimen_groups <- specimen_groups
         lg$group_col <- gcol
         lg$x_col <- xcol; lg$y_col <- ycol
       }
@@ -744,7 +752,7 @@ plotting_server <- function(id, data_reactive) {
         rows[[length(rows)+1]] <- header
         # Specimen table
         sp <- lg$specimens[[g]]
-        if (!is.null(sp) && nrow(sp) > 0) {
+        if (g %in% (lg$specimen_groups %||% character(0)) && !is.null(sp) && nrow(sp) > 0) {
           # Ensure columns have names: first col is ID (guess), then x,y
           colnames(sp)[1:3] <- c("ID", lg$x_col, lg$y_col)
           # Build compact HTML table
@@ -754,8 +762,6 @@ plotting_server <- function(id, data_reactive) {
           })
           tbl <- HTML(paste0(tbl_head, paste(tbl_rows, collapse = ""), "</tbody></table>"))
           rows[[length(rows)+1]] <- tbl
-        } else {
-          rows[[length(rows)+1]] <- HTML("<div style=\"margin-left:18px;\"><em>No hull specimens</em></div>")
         }
       }
       do.call(tagList, rows)
