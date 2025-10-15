@@ -390,7 +390,7 @@ data_import_server <- function(id) {
       info <- input$preview_cell_edit
       isolate({
         df <- working_data(); if (is.null(df)) return()
-        r <- as.integer(info$row); j <- as.integer(info$col)
+  r <- as.integer(info$row); j <- as.integer(info$col) + 1L
         # Guard
         if (j < 1 || j > ncol(df) || r < 1 || r > nrow(df)) return()
         col_name <- names(df)[j]
