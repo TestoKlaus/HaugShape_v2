@@ -239,8 +239,17 @@ Haug_overview <- function(data,
   if (is.null(colors) && !is.null(group_col)) {
     n_groups <- length(group_vals)
     colors <- scales::hue_pal()(n_groups)
+    # Name colors by group for reliable mapping
+    if (!is.null(group_vals) && length(group_vals) == length(colors)) {
+      names(colors) <- as.character(group_vals)
+    }
   } else if (is.null(colors)) {
     colors <- c("#1f77b4")  # Default blue
+  } else {
+    # If user provided colors and group_vals present, try to set names when lengths match
+    if (!is.null(group_vals) && length(colors) == length(group_vals) && is.null(names(colors))) {
+      names(colors) <- as.character(group_vals)
+    }
   }
   
   # Setup point style defaults
@@ -251,6 +260,15 @@ Haug_overview <- function(data,
     size = 2
   )
   point_style <- utils::modifyList(point_defaults, point_style)
+  # Ensure point colors are named for group mapping
+  if (!is.null(group_vals)) {
+    if (!is.null(point_style$color) && length(point_style$color) == length(group_vals) && is.null(names(point_style$color))) {
+      names(point_style$color) <- as.character(group_vals)
+    }
+    if (!is.null(point_style$fill) && length(point_style$fill) == length(group_vals) && is.null(names(point_style$fill))) {
+      names(point_style$fill) <- as.character(group_vals)
+    }
+  }
   
   # Setup text style defaults
   text_defaults <- list(
@@ -378,8 +396,13 @@ Haug_overview <- function(data,
         central_axes = TRUE
       )
     )
+    # Ensure hull fill colors are a named vector keyed by group values
+    hull_fill <- params$colors
+    if (!is.null(params$group_vals) && !is.null(hull_fill) && is.null(names(hull_fill)) && length(hull_fill) == length(params$group_vals)) {
+      names(hull_fill) <- as.character(params$group_vals)
+    }
     features <- list(
-      hulls = list(show = TRUE, groups = params$group_vals, fill = params$colors, alpha = params$hull_options$alpha),
+      hulls = list(show = TRUE, groups = params$group_vals, fill = hull_fill, alpha = params$hull_options$alpha),
       contours = list(show = FALSE),
       shapes = list(show = FALSE)
     )
@@ -436,8 +459,13 @@ Haug_overview <- function(data,
           central_axes = TRUE
         )
       )
+      # Ensure per-group hull fill resolves to the group's own color
+      hull_fill <- params$colors
+      if (!is.null(params$group_vals) && !is.null(hull_fill) && is.null(names(hull_fill)) && length(hull_fill) == length(params$group_vals)) {
+        names(hull_fill) <- as.character(params$group_vals)
+      }
       features <- list(
-        hulls = list(show = TRUE, groups = group, fill = params$colors, alpha = params$hull_options$alpha),
+        hulls = list(show = TRUE, groups = group, fill = hull_fill, alpha = params$hull_options$alpha),
         contours = list(show = FALSE),
         shapes = list(show = FALSE)
       )
@@ -509,9 +537,14 @@ Haug_overview <- function(data,
           central_axes = TRUE
         )
       )
+      # Ensure contour colors are named by group for proper mapping
+      contour_cols <- params$colors
+      if (!is.null(params$group_vals) && !is.null(contour_cols) && is.null(names(contour_cols)) && length(contour_cols) == length(params$group_vals)) {
+        names(contour_cols) <- as.character(params$group_vals)
+      }
       features <- list(
         hulls = list(show = FALSE),
-        contours = list(show = TRUE, groups = group, colors = params$colors, linewidth = params$contour_options$linewidth),
+        contours = list(show = TRUE, groups = group, colors = contour_cols, linewidth = params$contour_options$linewidth),
         shapes = list(show = FALSE)
       )
       labels <- list(

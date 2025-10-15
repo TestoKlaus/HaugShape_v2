@@ -191,6 +191,8 @@ overview_server <- function(id, data_reactive) {
       if (!is.null(gcol) && nzchar(gcol)) {
         grps <- if (!is.null(gvals) && length(gvals)) gvals else unique(df[[gcol]])
         colors <- tryCatch({ if (requireNamespace("scales", quietly = TRUE)) scales::hue_pal()(length(grps)) else rep("#1f77b4", length(grps)) }, error = function(...) rep("#1f77b4", length(grps)))
+        # Name the colors by group for reliable mapping
+        if (length(colors) == length(grps)) names(colors) <- as.character(grps)
       }
 
       # Build style + options lists
