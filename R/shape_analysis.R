@@ -6,8 +6,8 @@
 #'
 #' @param shape_dir A character string specifying the directory containing shape files
 #'   (images in JPG format). The directory must exist and contain at least one valid JPG file.
-#' @param norm Logical. Should the Fourier descriptors be normalized in EFA? If TRUE, descriptors
-#'   are normalized to the first harmonic. If FALSE, descriptors are normalized to the longest radius.
+#' @param norm Logical. Should the Fourier descriptors be normalized? If TRUE, shapes are
+#'   normalized to the first harmonic. If FALSE, shapes are normalized to the longest radius.
 #'   Default is TRUE.
 #' @param output_dir A character string specifying the directory where the Excel file will be saved.
 #'   If NULL, the file will be saved in the working directory.
@@ -98,16 +98,18 @@ shape_analysis <- function(shape_dir,
   
   shapes <- .import_shape_files(shape_dir, verbose)
   
-  # Always perform geometric preprocessing: center, scale, start-point align; optional orientation align ----
-  if (verbose) message("Centering/scaling and aligning shapes (start point: ", start_point, ")...")
-  normalized_shapes <- .normalize_shapes(shapes, start_point, align_orientation, verbose)
-  if (isTRUE(use_raw_shapes) && verbose) {
-    message("Using raw shapes for EFA (no descriptor normalization); geometric preprocessing still applied.")
+  # Normalize shapes (unless raw mode) ----
+  if (isTRUE(use_raw_shapes)) {
+    if (verbose) message("Using shapes as-is (no centering/scaling/orientation changes)")
+    normalized_shapes <- shapes
+  } else {
+    if (verbose) message("Normalizing shapes...")
+    normalized_shapes <- .normalize_shapes(shapes, start_point, align_orientation, verbose)
   }
   
   # Perform Elliptical Fourier Analysis ----
   if (verbose) message("Performing Elliptical Fourier Analysis...")
-  # If using raw shapes, do not apply EFA normalization (keep descriptors unnormalized)
+  # If using raw shapes, do not apply EFA normalization (keep as-is)
   effective_norm <- if (isTRUE(use_raw_shapes)) FALSE else norm
   efa_results <- .perform_efa(normalized_shapes, effective_norm, harmonics, verbose)
   
