@@ -114,8 +114,6 @@ data_import_server <- function(id) {
     observeEvent(input$file, {
       req(input$file)
       path <- input$file$datapath
-      # Store the source filename (for default save name)
-      source_name <- input$file$name
 
       # Validate file extension
       ext <- tolower(tools::file_ext(input$file$name))
@@ -240,17 +238,8 @@ data_import_server <- function(id) {
         roots <- c(`C:` = "C:/", roots)
       }
       roots <- c(roots, Home = normalizePath("~"), `Working Dir` = normalizePath(getwd()))
-      # Configure save dialog; default filename from uploaded file name if present
-      default_file <- {
-        nm <- input$file$name
-        if (isTruthy(nm)) {
-          base <- sub("\\\\.[^.]*$", "", nm)
-          paste0(base, ".xlsx")
-        } else {
-          "edited_data.xlsx"
-        }
-      }
-      shinyFiles::shinyFileSave(input, id = "save_excel_btn", roots = roots, session = session, defaultFile = default_file)
+      # Configure save dialog (omit defaultFile for compatibility with older shinyFiles)
+      shinyFiles::shinyFileSave(input, id = "save_excel_btn", roots = roots, session = session)
     })
     observeEvent(input$save_excel_btn, {
       if (!isTRUE(shinyfiles_ready())) return()
