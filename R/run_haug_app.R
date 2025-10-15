@@ -48,20 +48,20 @@ run_haug_app <- function(host = "127.0.0.1",
          call. = FALSE)
   }
   
-  # Get the app directory
-  app_dir <- system.file("shiny", package = "HaugShape")
+  # Get the app directory (installed package embeds app under inst/app)
+  app_dir <- system.file("app", package = "HaugShape_v2")
 
-  if (app_dir == "") {
-    # If package not installed, try local development version (inst/shiny)
-    inst_app_dir <- file.path(getwd(), "inst", "shiny")
-    if (dir.exists(inst_app_dir)) {
+  if (!nzchar(app_dir) || !file.exists(file.path(app_dir, "app.R"))) {
+    # Local development fallbacks
+  inst_app_dir <- file.path(getwd(), "inst", "app")
+    if (dir.exists(inst_app_dir) && file.exists(file.path(inst_app_dir, "app.R"))) {
       app_dir <- inst_app_dir
     } else if (file.exists(file.path(getwd(), "app.R"))) {
       # Fallback: run from project root that contains app.R
       app_dir <- getwd()
     } else {
       stop(
-        "Cannot find Shiny app directory. Please ensure HaugShape package is properly installed or that app.R exists in the project root.",
+        "Cannot find embedded Shiny app. Ensure inst/app/app.R exists and reinstall the package, or place app.R in the project root.",
         call. = FALSE
       )
     }
