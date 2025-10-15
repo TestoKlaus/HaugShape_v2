@@ -159,7 +159,7 @@ plotting_ui <- function(id) {
           collapsible = TRUE,
           collapsed = FALSE,
           helpText("Summary of what is currently displayed in the plot."),
-          verbatimTextOutput(ns("legend_text")),
+          htmlOutput(ns("legend_html")),
           div(style = "margin-top:8px;",
               actionButton(ns("show_hull_specimens"), "Show hull specimens", class = "btn-primary")
           )
@@ -674,33 +674,54 @@ plotting_server <- function(id, data_reactive) {
 
       plot_obj(p)
 
-      # Build legend info summary
-      # Determine used groups and aesthetic mappings applied
+      # Build legend info summary with actual colors and hull specimens per group
       lg <- list()
       if (!is.null(gcol) && nzchar(gcol)) {
         used_groups <- if (!is.null(gvals) && length(gvals)) gvals else unique(df[[gcol]])
-        # Build per-group aesthetics from input pickers if present; fallback to automatic palette
+        used_groups <- as.character(used_groups)
         safe_id <- function(x) gsub("[^A-Za-z0-9_]", "_", as.character(x))
         get_or <- function(id, default) { val <- input[[id]]; if (is.null(val) || (is.character(val) && !nzchar(val))) default else val }
-        # Colors
+
+        # Base palette used by plotting defaults when user didn't override
+        auto_pal <- tryCatch({ if (requireNamespace("scales", quietly = TRUE)) scales::hue_pal()(length(used_groups)) else rep("#1f77b4", length(used_groups)) }, error = function(...) rep("#1f77b4", length(used_groups)))
+        names(auto_pal) <- used_groups
+
+        # Colors from pickers or fallback auto palette
         if (isTRUE(colourpicker_ready())) {
-          cols <- setNames(vapply(used_groups, function(g) get_or(paste0("point_color_", safe_id(g)), NA_character_), character(1)), as.character(used_groups))
-          fills <- setNames(vapply(used_groups, function(g) get_or(paste0("point_fill_", safe_id(g)), NA_character_), character(1)), as.character(used_groups))
+          cols <- setNames(vapply(used_groups, function(g) get_or(paste0("point_color_", safe_id(g)), auto_pal[[g]]), character(1)), used_groups)
+          fills <- setNames(vapply(used_groups, function(g) get_or(paste0("point_fill_", safe_id(g)), auto_pal[[g]]), character(1)), used_groups)
         } else {
-          cols <- setNames(rep(NA_character_, length(used_groups)), as.character(used_groups))
-          fills <- cols
+          cols <- auto_pal
+          fills <- auto_pal
         }
-        # Shapes
+        # Shapes from pickers or default 21
         shapes <- setNames(vapply(used_groups, function(g) {
           v <- input[[paste0("point_shape_", safe_id(g))]]
-          if (is.null(v)) NA_real_ else suppressWarnings(as.numeric(v))
-        }, numeric(1)), as.character(used_groups))
+          if (is.null(v)) 21 else suppressWarnings(as.numeric(v))
+        }, numeric(1)), used_groups)
+
+        # Compute hull specimens for each group at current X/Y
+        xcol <- x_col; ycol <- y_col
+        specimen_rows <- lapply(used_groups, function(gv) {
+          gd <- df[df[[gcol]] == gv, , drop = FALSE]
+          gd <- gd[is.finite(gd[[xcol]]) & is.finite(gd[[ycol]]), , drop = FALSE]
+          if (nrow(gd) < 1) return(data.frame())
+          if (nrow(gd) >= 3) {
+            idx <- tryCatch(grDevices::chull(gd[[xcol]], gd[[ycol]]), error = function(...) integer())
+            if (length(idx)) gd[idx, c(1, match(xcol, names(gd)), match(ycol, names(gd))) , drop = FALSE] else gd[0, , drop = FALSE]
+          } else {
+            gd[, c(1, match(xcol, names(gd)), match(ycol, names(gd))) , drop = FALSE]
+          }
+        })
+        names(specimen_rows) <- used_groups
 
         lg$groups <- used_groups
         lg$colors <- cols
         lg$fills <- fills
         lg$shapes <- shapes
+        lg$specimens <- specimen_rows
         lg$group_col <- gcol
+        lg$x_col <- xcol; lg$y_col <- ycol
       }
 
       legend_info(lg)
@@ -713,19 +734,34 @@ plotting_server <- function(id, data_reactive) {
 
     output$messages <- renderText({ messages() })
 
-    output$legend_text <- renderText({
+    output$legend_html <- renderUI({
       lg <- legend_info()
-      if (is.null(lg) || is.null(lg$groups)) return("No grouping applied; legend not required.")
-      fmt_shape <- function(s) ifelse(is.na(s), "(default)", as.character(s))
-      fmt_col <- function(c) ifelse(is.na(c) || !nzchar(c), "(auto)", c)
-      lines <- c(
-        paste0("Grouping by: ", lg$group_col),
-        paste0("Groups (n=", length(lg$groups), "):")
-      )
+      if (is.null(lg) || is.null(lg$groups)) return(HTML("<em>No grouping applied; legend not required.</em>"))
+      # Build HTML with color swatches and specimen tables per group
+      rows <- list()
+      rows[[length(rows)+1]] <- HTML(paste0("<div><strong>Grouping by:</strong> ", htmltools::htmlEscape(lg$group_col), "</div>"))
       for (g in lg$groups) {
-        lines <- c(lines, paste0("  - ", g, ": color=", fmt_col(lg$colors[[as.character(g)]]), ", fill=", fmt_col(lg$fills[[as.character(g)]]), ", shape=", fmt_shape(lg$shapes[[as.character(g)]])))
+        col <- lg$colors[[g]]; fill <- lg$fills[[g]]; shp <- lg$shapes[[g]]
+        swatch <- paste0('<span style="display:inline-block;width:14px;height:14px;border:1px solid #888;background:', htmltools::htmlEscape(fill), ';"></span>')
+        header <- HTML(paste0("<div style=\"margin-top:6px;\">", swatch, " <strong>", htmltools::htmlEscape(col), "</strong>: group ", htmltools::htmlEscape(g), " (shape ", htmltools::htmlEscape(as.character(shp)), ")</div>"))
+        rows[[length(rows)+1]] <- header
+        # Specimen table
+        sp <- lg$specimens[[g]]
+        if (!is.null(sp) && nrow(sp) > 0) {
+          # Ensure columns have names: first col is ID (guess), then x,y
+          colnames(sp)[1:3] <- c("ID", lg$x_col, lg$y_col)
+          # Build compact HTML table
+          tbl_head <- paste0("<table class=\"table table-sm\" style=\"margin-left:18px;\"><thead><tr><th>ID</th><th>", htmltools::htmlEscape(lg$x_col), "</th><th>", htmltools::htmlEscape(lg$y_col), "</th></tr></thead><tbody>")
+          tbl_rows <- apply(sp, 1, function(r) {
+            sprintf("<tr><td>%s</td><td>%s</td><td>%s</td></tr>", htmltools::htmlEscape(as.character(r[1])), htmltools::htmlEscape(format(as.numeric(r[2]), digits = 4)), htmltools::htmlEscape(format(as.numeric(r[3]), digits = 4)))
+          })
+          tbl <- HTML(paste0(tbl_head, paste(tbl_rows, collapse = ""), "</tbody></table>"))
+          rows[[length(rows)+1]] <- tbl
+        } else {
+          rows[[length(rows)+1]] <- HTML("<div style=\"margin-left:18px;\"><em>No hull specimens</em></div>")
+        }
       }
-      paste(lines, collapse = "\n")
+      do.call(tagList, rows)
     })
 
     observeEvent(input$show_hull_specimens, {
