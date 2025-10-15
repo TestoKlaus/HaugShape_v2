@@ -15,6 +15,27 @@ This guide will help you install HaugShape v2 with all required packages for mor
 3. Run: `source('setup.R')`
 4. Run the app: `source('R/run_haug_app.R'); run_haug_app()`
 
+### Install from GitHub (alternative)
+If you prefer installing directly from GitHub, ensure some build tools are present first, then run the install:
+
+```r
+# 1) Install prerequisites used by the installer/build chain
+install.packages(c("remotes", "processx", "callr", "pkgbuild"))
+
+# 2) Install this package from GitHub (without building vignettes for speed)
+remotes::install_github(
+   "TestoKlaus/HaugShape_v2",
+   ref = "develop",
+   dependencies = TRUE,
+   build_vignettes = FALSE
+)
+```
+
+Notes for Windows:
+- Make sure Rtools is installed (required for compiling some packages from source).
+- If you see an error like "there is no package called 'processx'", run:
+   `install.packages(c("processx", "callr", "pkgbuild"))` and retry the GitHub install.
+
 ## Required Packages
 
 HaugShape v2 requires the following R packages:

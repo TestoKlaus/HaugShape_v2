@@ -35,7 +35,7 @@ run_haug_app <- function(host = "127.0.0.1",
   required_packages <- c(
     "shiny", "shinydashboard", "DT", "plotly", "shinyWidgets",
     "shinyFiles", "shinycssloaders", "colourpicker", "ggplot2",
-    "dplyr", "readxl"
+    "dplyr", "readxl", "openxlsx"
   )
   
   missing_packages <- required_packages[!sapply(required_packages, requireNamespace, quietly = TRUE)]
