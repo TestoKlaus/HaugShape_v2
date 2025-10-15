@@ -18,8 +18,10 @@ Depends:
 Imports:
     Momocs,
     ggplot2,
+    scales,
     dplyr,
     tidyr,
+    readxl,
     openxlsx,
     magick,
     shinyFiles,

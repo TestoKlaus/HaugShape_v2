@@ -23,7 +23,7 @@
 #'   \item{plot_style}{Style theme: "Haug", "inverted_Haug", "publication" (default: "Haug")}
 #'   \item{point}{List with point styling (color, fill, shape, size)}
 #'   \item{text}{List with text styling (title_size, label_size, tick_size)}
-#'   \item{axis}{List with axis styling (linewidth, tick_length, tick_margin)}
+#'   \item{axis}{List with axis styling (linewidth, tick_length, tick_margin, fixed_aspect)}
 #' }
 #'
 #' The `features` parameter accepts a list with the following options:
@@ -32,6 +32,21 @@
 #'   \item{contours}{List with contour options (show, groups, colors, linewidth)}
 #'   \item{shapes}{List with shape options (show, groups, size, shift, adjustments)}
 #' }
+#'
+#' The `export_options` parameter accepts a list with the following options:
+#' \describe{
+#'   \item{export}{Logical, whether to export the plot (default: FALSE)}
+#'   \item{filename}{Base filename without extension}
+#'   \item{path}{Optional output directory}
+#'   \item{format}{Output format, e.g. "tiff" or "jpg"}
+#'   \item{dpi}{Resolution in dots per inch (default: 300)}
+#'   \item{width}{Optional width in inches}
+#'   \item{height}{Optional height in inches}
+#' }
+#' Notes on export behavior:
+#' - Shapes and geometry will not be distorted: by default a fixed 1:1 aspect ratio is applied.
+#' - If only one of width/height is provided, the other is computed to preserve the aspect ratio.
+#' - If both are provided, the plot maintains its aspect ratio inside the image, adding padding as needed.
 #'
 #' @return A ggplot2 object representing the scatter plot.
 #'
@@ -125,6 +140,16 @@ shape_plot <- function(data,
   
   # Apply styling and theming ----
   plot <- .apply_plot_styling(plot, params)
+  # Apply aspect (1:1 or 2:1) to avoid distortion when resizing
+  asp_choice <- params$styling$axis$aspect
+  if (!is.null(asp_choice)) {
+    ratio <- switch(as.character(asp_choice),
+      "1:1" = 1,
+      "2:1" = 0.5, # coord_fixed uses y/x; width:height 2:1 -> y/x = 1/2
+      1
+    )
+    plot <- plot + ggplot2::coord_fixed(ratio = ratio, expand = TRUE)
+  }
   # Centralized axes overlay (legacy style)
   if (isTRUE(params$styling$axis$central_axes)) {
     plot <- .apply_central_axes(plot, clean_data, x_col, y_col, params)
@@ -223,10 +248,19 @@ shape_plot <- function(data,
       linewidth = 1,
       tick_length = 0.005,
       tick_margin = 0.05,
-      central_axes = TRUE
+      central_axes = TRUE,
+      aspect = "2:1"
     )
   )
   styling <- .merge_nested_lists(styling_defaults, styling)
+  # Backward compatibility: map legacy fixed_aspect flag to aspect choice if supplied
+  if (!is.null(styling$axis$fixed_aspect)) {
+    if (isTRUE(styling$axis$fixed_aspect)) {
+      styling$axis$aspect <- "1:1"
+    } else if (isFALSE(styling$axis$fixed_aspect) && is.null(styling$axis$aspect)) {
+      styling$axis$aspect <- "2:1"
+    }
+  }
   # Ensure point aesthetics are not NULL after merge (UI may send NULLs)
   if (is.null(styling$point$color) || length(styling$point$color) == 0) {
     styling$point$color <- default_colors
@@ -300,10 +334,10 @@ shape_plot <- function(data,
     export = FALSE,
     filename = "shape_plot_output",
     path = NULL,
-    format = "tiff",
-    width = 10,
-    height = 8,
-    dpi = 300
+    format = "tiff",  # "tiff" | "jpg" | "png" etc.
+    width = NULL,      # in inches; if NULL and height provided, computed from aspect
+    height = NULL,     # in inches; if NULL and width provided, computed from aspect
+    dpi = 300          # dots per inch
   )
   export_options <- utils::modifyList(export_defaults, export_options)
   
@@ -739,6 +773,22 @@ shape_plot <- function(data,
   s_xadj <- as.numeric(params$features$shapes$x_adjust)
   s_yadj <- as.numeric(params$features$shapes$y_adjust)
 
+  # Determine plot aspect ratio (y/x) from styling; default 1:1. For "w:h", ratio = h/w
+  get_ratio <- function(asp) {
+    if (is.null(asp)) return(1)
+    if (is.numeric(asp) && is.finite(asp) && asp > 0) return(as.numeric(asp))
+    if (is.character(asp) && grepl(":", asp, fixed = TRUE)) {
+      parts <- strsplit(asp, ":", fixed = TRUE)[[1]]
+      if (length(parts) == 2) {
+        w <- suppressWarnings(as.numeric(parts[1]))
+        h <- suppressWarnings(as.numeric(parts[2]))
+        if (is.finite(w) && is.finite(h) && w > 0) return(h / w)
+      }
+    }
+    1
+  }
+  coord_ratio <- get_ratio(params$styling$axis$aspect)
+
   # Compute global scale in data units (use overall range)
   xr <- range(data[[x_col]], na.rm = TRUE)
   yr <- range(data[[y_col]], na.rm = TRUE)
@@ -779,6 +829,10 @@ shape_plot <- function(data,
     center <- colMeans(coords, na.rm = TRUE)
     rel <- sweep(coords, 2, center, FUN = "-")
     rel <- rel * scale_fac
+    # Compensate y dimension so shapes remain visually 1:1 under non-square plot aspect
+    if (is.finite(coord_ratio) && coord_ratio > 0 && coord_ratio != 1) {
+      rel[,2] <- rel[,2] / coord_ratio
+    }
 
     # Determine offset position for this row
     px <- as.numeric(draw_data[[x_col]][i])
@@ -793,7 +847,7 @@ shape_plot <- function(data,
     offx <- px + s_shift * ux + s_xadj
     offy <- py + s_shift * uy + s_yadj
 
-    final <- cbind(rel[,1] + offx, rel[,2] + offy)
+  final <- cbind(rel[,1] + offx, rel[,2] + offy)
     poly_list[[idx]] <- data.frame(
       sx = final[,1], sy = final[,2],
       .shape_id = idx,
@@ -1019,14 +1073,46 @@ shape_plot <- function(data,
   
   if (verbose) message("Exporting plot to: ", file_path)
   
+  # Determine aspect ratio from plot build if available, fallback to 1 (square)
+  aspect_ratio <- try({
+    cf <- plot$coordinates
+    r <- tryCatch(cf$ratio, error = function(...) NULL)
+    if (is.null(r)) 1 else as.numeric(r)
+  }, silent = TRUE)
+  if (!is.numeric(aspect_ratio) || !is.finite(aspect_ratio) || aspect_ratio <= 0) aspect_ratio <- 1
+
+  # Compute width/height if one is missing to preserve aspect
+  width <- export_options$width
+  height <- export_options$height
+  if (is.null(width) && is.null(height)) {
+    # Sensible defaults maintaining aspect
+    height <- 6
+    width <- height / aspect_ratio
+  } else if (is.null(width) && !is.null(height)) {
+    width <- height / aspect_ratio
+  } else if (!is.null(width) && is.null(height)) {
+    height <- width * aspect_ratio
+  }
+
+  # Choose device based on format to avoid ambiguity
+  fmt <- tolower(export_options$format)
+  device <- switch(fmt,
+    "tif" = grDevices::tiff,
+    "tiff" = grDevices::tiff,
+    "jpg" = grDevices::jpeg,
+    "jpeg" = grDevices::jpeg,
+    "png" = grDevices::png,
+    NULL
+  )
+
   tryCatch({
     ggplot2::ggsave(
       filename = file_path,
       plot = plot,
-      width = export_options$width,
-      height = export_options$height,
+      width = width,
+      height = height,
       dpi = export_options$dpi,
-      device = export_options$format
+      device = device
     )
     
     if (verbose) message("Plot exported successfully")
