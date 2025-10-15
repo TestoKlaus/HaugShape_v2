@@ -140,9 +140,15 @@ shape_plot <- function(data,
   
   # Apply styling and theming ----
   plot <- .apply_plot_styling(plot, params)
-  # Ensure fixed aspect ratio to avoid shape distortion when resizing
-  if (isTRUE(params$styling$axis$fixed_aspect)) {
-    plot <- plot + ggplot2::coord_fixed(ratio = 1, expand = TRUE)
+  # Apply aspect (1:1 or 2:1) to avoid distortion when resizing
+  asp_choice <- params$styling$axis$aspect
+  if (!is.null(asp_choice)) {
+    ratio <- switch(as.character(asp_choice),
+      "1:1" = 1,
+      "2:1" = 0.5, # coord_fixed uses y/x; width:height 2:1 -> y/x = 1/2
+      1
+    )
+    plot <- plot + ggplot2::coord_fixed(ratio = ratio, expand = TRUE)
   }
   # Centralized axes overlay (legacy style)
   if (isTRUE(params$styling$axis$central_axes)) {
@@ -243,10 +249,18 @@ shape_plot <- function(data,
       tick_length = 0.005,
       tick_margin = 0.05,
       central_axes = TRUE,
-      fixed_aspect = TRUE
+      aspect = "2:1"
     )
   )
   styling <- .merge_nested_lists(styling_defaults, styling)
+  # Backward compatibility: map legacy fixed_aspect flag to aspect choice if supplied
+  if (!is.null(styling$axis$fixed_aspect)) {
+    if (isTRUE(styling$axis$fixed_aspect)) {
+      styling$axis$aspect <- "1:1"
+    } else if (isFALSE(styling$axis$fixed_aspect) && is.null(styling$axis$aspect)) {
+      styling$axis$aspect <- "2:1"
+    }
+  }
   # Ensure point aesthetics are not NULL after merge (UI may send NULLs)
   if (is.null(styling$point$color) || length(styling$point$color) == 0) {
     styling$point$color <- default_colors
@@ -1039,7 +1053,7 @@ shape_plot <- function(data,
   
   if (verbose) message("Exporting plot to: ", file_path)
   
-  # Determine aspect ratio from plot build if available, fallback to 1
+  # Determine aspect ratio from plot build if available, fallback to 1 (square)
   aspect_ratio <- try({
     cf <- plot$coordinates
     r <- tryCatch(cf$ratio, error = function(...) NULL)
@@ -1051,7 +1065,7 @@ shape_plot <- function(data,
   width <- export_options$width
   height <- export_options$height
   if (is.null(width) && is.null(height)) {
-    # Sensible defaults maintaining aspect: base height, derive width
+    # Sensible defaults maintaining aspect
     height <- 6
     width <- height / aspect_ratio
   } else if (is.null(width) && !is.null(height)) {

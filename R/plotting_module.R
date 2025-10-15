@@ -49,7 +49,7 @@ plotting_ui <- function(id) {
           width = 12,
           collapsible = TRUE,
           collapsed = TRUE,
-          checkboxInput(ns("fixed_aspect"), "Lock aspect ratio 1:1 (prevents distortion)", value = TRUE)
+          selectInput(ns("aspect"), "Plot aspect ratio", choices = c("2:1","1:1"), selected = "2:1")
         ),
         box(
           title = "Features - Hulls",
@@ -493,7 +493,7 @@ plotting_server <- function(id, data_reactive) {
           linewidth = input$axis_linewidth,
           tick_length = input$tick_length,
           tick_margin = input$tick_margin,
-          fixed_aspect = isTRUE(input$fixed_aspect)
+          aspect = input$aspect
         )
       )
 
