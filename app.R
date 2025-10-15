@@ -18,21 +18,17 @@ ui <- dashboardPage(
   # Sidebar
   dashboardSidebar(
     sidebarMenu(
-      menuItem("1. Data Import", tabName = "import", icon = icon("upload")),
-      menuItem("2. Image Processing", tabName = "images", icon = icon("image")),
-      menuItem("3. Shape Analysis", tabName = "shape", icon = icon("chart-area"))
+      menuItem("1. Image Processing", tabName = "images", icon = icon("image")),
+      menuItem("2. Shape Analysis", tabName = "shape", icon = icon("chart-area")),
+      menuItem("3. Data Import", tabName = "import", icon = icon("upload")),
+      menuItem("4. Plotting", tabName = "plotting", icon = icon("chart-line"))
     )
   ),
   
   # Body
   dashboardBody(
     tabItems(
-      
-      # Data Import Tab
-      tabItem(tabName = "import",
-        data_import_ui("import_excel")
-      ),
-      
+
       # Image Processing Tab
       tabItem(tabName = "images",
         image_processing_ui("img_proc")
@@ -41,6 +37,16 @@ ui <- dashboardPage(
       # Shape Analysis Tab
       tabItem(tabName = "shape",
         shape_analysis_ui("shape_an")
+      ),
+
+      # Data Import Tab
+      tabItem(tabName = "import",
+        data_import_ui("import_excel")
+      ),
+
+      # Plotting Tab
+      tabItem(tabName = "plotting",
+        plotting_ui("plotting")
       )
       
     )
@@ -65,6 +71,9 @@ server <- function(input, output, session) {
 
   # Initialize shape analysis module
   shape_analysis_server("shape_an")
+
+  # Initialize plotting module (uses data from Data Import)
+  plotting_server("plotting", data_reactive = imported$data)
 }
 
 # Run the application

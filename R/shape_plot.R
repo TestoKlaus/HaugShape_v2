@@ -125,6 +125,10 @@ shape_plot <- function(data,
   
   # Apply styling and theming ----
   plot <- .apply_plot_styling(plot, params)
+  # Centralized axes overlay (legacy style)
+  if (isTRUE(params$styling$axis$central_axes)) {
+    plot <- .apply_central_axes(plot, clean_data, x_col, y_col, params)
+  }
   
   # Export if requested ----
   if (params$export_options$export) {
@@ -218,7 +222,8 @@ shape_plot <- function(data,
     axis = list(
       linewidth = 1,
       tick_length = 0.005,
-      tick_margin = 0.05
+      tick_margin = 0.05,
+      central_axes = TRUE
     )
   )
   styling <- .merge_nested_lists(styling_defaults, styling)
@@ -250,6 +255,16 @@ shape_plot <- function(data,
     )
   )
   features <- .merge_nested_lists(features_defaults, features)
+  # Ensure non-NULL defaults after merge (avoid replication errors)
+  if (is.null(features$hulls$fill) || length(features$hulls$fill) == 0) {
+    features$hulls$fill <- default_colors
+  }
+  if (is.null(features$hulls$color) || length(features$hulls$color) == 0) {
+    features$hulls$color <- "black"
+  }
+  if (is.null(features$contours$colors) || length(features$contours$colors) == 0) {
+    features$contours$colors <- "black"
+  }
   
   # Setup label defaults
   labels_defaults <- list(
@@ -629,6 +644,142 @@ shape_plot <- function(data,
       axis.ticks.length = ggplot2::unit(params$styling$axis$tick_length, "npc")
     )
   
+  return(plot)
+}
+
+#' Add centralized axes with arrows, custom ticks, and label fields (legacy style)
+#' @noRd
+.apply_central_axes <- function(plot, data, x_col, y_col, params) {
+  # Ranges and padding
+  x_range <- range(data[[x_col]], na.rm = TRUE)
+  y_range <- range(data[[y_col]], na.rm = TRUE)
+  x_expand <- 0.05 * (x_range[2] - x_range[1])
+  y_expand <- 0.05 * (y_range[2] - y_range[1])
+
+  # Ticks (exclude 0 and outermost)
+  x_ticks <- pretty(x_range)
+  y_ticks <- pretty(y_range)
+  x_ticks <- x_ticks[x_ticks != 0 & x_ticks > x_range[1] & x_ticks < x_range[2]]
+  y_ticks <- y_ticks[y_ticks != 0 & y_ticks > y_range[1] & y_ticks < y_range[2]]
+
+  # Styling
+  style_colors <- .get_style_colors(params$styling$plot_style)
+  axis_col <- style_colors$axis
+  text_col <- style_colors$text
+  lw <- params$styling$axis$linewidth
+  tick_len_prop <- params$styling$axis$tick_length
+  tick_margin <- params$styling$axis$tick_margin
+
+  # Convert tick length to data units
+  x_tick_len <- tick_len_prop * diff(y_range)
+  y_tick_len <- tick_len_prop * diff(x_range)
+
+  # Reset/minimal theme with hidden default axes/labels
+  plot <- plot +
+    ggplot2::theme_minimal(base_family = "sans") +
+    ggplot2::theme(
+      panel.grid = ggplot2::element_blank(),
+      axis.line = ggplot2::element_blank(),
+      axis.ticks = ggplot2::element_blank(),
+      axis.text = ggplot2::element_blank(),
+      axis.title.x = ggplot2::element_blank(),
+      axis.title.y = ggplot2::element_blank(),
+      plot.margin = ggplot2::margin(tick_margin, tick_margin, tick_margin, tick_margin)
+    )
+
+  # Arrowed axes through origin
+  plot <- plot +
+    ggplot2::geom_segment(
+      ggplot2::aes(x = x_range[1] - x_expand, xend = x_range[2] + x_expand, y = 0, yend = 0),
+      arrow = grid::arrow(length = grid::unit(0.3, "cm")), color = axis_col, size = lw
+    ) +
+    ggplot2::geom_segment(
+      ggplot2::aes(y = y_range[1] - y_expand, yend = y_range[2] + y_expand, x = 0, xend = 0),
+      arrow = grid::arrow(length = grid::unit(0.3, "cm")), color = axis_col, size = lw
+    )
+
+  # Tick marks
+  if (length(x_ticks)) {
+    plot <- plot +
+      ggplot2::geom_segment(
+        data = data.frame(x = x_ticks),
+        ggplot2::aes(x = x, xend = x, y = -x_tick_len, yend = x_tick_len),
+        color = axis_col, size = lw
+      )
+  }
+  if (length(y_ticks)) {
+    plot <- plot +
+      ggplot2::geom_segment(
+        data = data.frame(y = y_ticks),
+        ggplot2::aes(y = y, yend = y, x = -y_tick_len, xend = y_tick_len),
+        color = axis_col, size = lw
+      )
+  }
+
+  # Tick labels
+  tick_text_size <- params$styling$text$tick_size / 3
+  if (length(x_ticks)) {
+    plot <- plot +
+      ggplot2::geom_text(
+        data = data.frame(x = x_ticks, y = 0),
+        ggplot2::aes(x = x, y = y, label = x),
+        vjust = 1.5 + tick_len_prop * 50,
+        size = tick_text_size, color = text_col
+      )
+  }
+  if (length(y_ticks)) {
+    plot <- plot +
+      ggplot2::geom_text(
+        data = data.frame(x = 0, y = y_ticks),
+        ggplot2::aes(x = x, y = y, label = y),
+        hjust = 1.5 + tick_len_prop * 50,
+        size = tick_text_size, color = text_col
+      )
+  }
+
+  # Title and custom axis labels with optional borders
+  plot <- plot + ggplot2::labs(title = params$labels$title, y = NULL)
+
+  x_adj <- params$labels$x_adjust; if (length(x_adj) != 2) x_adj <- c(0,0)
+  y_adj <- params$labels$y_adjust; if (length(y_adj) != 2) y_adj <- c(0,0)
+
+  x_lab_x <- max(x_range) + x_expand + as.numeric(x_adj[1])
+  x_lab_y <- -0.05 * diff(y_range) + as.numeric(x_adj[2])
+  y_lab_x <- as.numeric(y_adj[1])
+  y_lab_y <- max(y_range) + 0.12 * max(y_range) + y_expand + as.numeric(y_adj[2])
+
+  if (isTRUE(params$labels$show_borders)) {
+    plot <- plot +
+      ggplot2::annotate(
+        "label",
+        x = x_lab_x, y = x_lab_y,
+        label = params$labels$x_label, size = params$labels$x_size,
+        label.padding = grid::unit(0.3, "lines"),
+        color = style_colors$text_field_color, fill = style_colors$text_field_fill
+      ) +
+      ggplot2::annotate(
+        "label",
+        x = y_lab_x, y = y_lab_y,
+        label = params$labels$y_label, size = params$labels$y_size,
+        label.padding = grid::unit(0.3, "lines"),
+        color = style_colors$text_field_color, fill = style_colors$text_field_fill,
+        angle = ifelse(isTRUE(params$labels$rotate_y), 90, 0)
+      )
+  } else {
+    plot <- plot +
+      ggplot2::annotate(
+        "text",
+        x = x_lab_x, y = x_lab_y,
+        label = params$labels$x_label, size = params$labels$x_size, color = text_col
+      ) +
+      ggplot2::annotate(
+        "text",
+        x = y_lab_x, y = y_lab_y,
+        label = params$labels$y_label, size = params$labels$y_size, color = text_col,
+        angle = ifelse(isTRUE(params$labels$rotate_y), 90, 0)
+      )
+  }
+
   return(plot)
 }
 
