@@ -49,7 +49,7 @@ run_haug_app <- function(host = "127.0.0.1",
   }
   
   # Get the app directory (installed package embeds app under inst/app)
-  app_dir <- system.file("app", package = "HaugShape_v2")
+  app_dir <- system.file("app", package = "HaugShapeV2")
 
   if (!nzchar(app_dir) || !file.exists(file.path(app_dir, "app.R"))) {
     # Local development fallbacks
