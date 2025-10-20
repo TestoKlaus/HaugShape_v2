@@ -9,6 +9,11 @@
 #' @param norm Logical. Should the Fourier descriptors be normalized? If TRUE, shapes are
 #'   normalized to the first harmonic. If FALSE, shapes are normalized to the longest radius.
 #'   Default is TRUE.
+#' @param use_raw_shapes Logical. When TRUE, apply the manual "as-is" pipeline to match
+#'   your R snippet: center -> scale -> slide direction "up"; then efourier with
+#'   norm = FALSE and start = TRUE; finally PCA with center = TRUE and scale. = FALSE.
+#'   This ignores the 'norm' and 'start_point' UI settings to reproduce the same values
+#'   as the manual run. Default is FALSE.
 #' @param output_dir A character string specifying the directory where the Excel file will be saved.
 #'   If NULL, the file will be saved in the working directory.
 #' @param output_file A character string specifying the name of the Excel file where PCA scores will
@@ -100,8 +105,13 @@ shape_analysis <- function(shape_dir,
   
   # Normalize shapes (unless raw mode) ----
   if (isTRUE(use_raw_shapes)) {
-    if (verbose) message("Using shapes as-is (no centering/scaling/orientation changes)")
-    normalized_shapes <- shapes
+    # Match the user's manual script with user-selected direction:
+    # H %>% coo_center %>% coo_scale %>% coo_slidedirection(start_point)
+    if (verbose) message("Using 'as-is' pipeline: center -> scale -> slide '", start_point, "' (no EFA normalization)")
+    normalized_shapes <- shapes %>%
+      Momocs::coo_center() %>%
+      Momocs::coo_scale() %>%
+      Momocs::coo_slidedirection(start_point)
   } else {
     if (verbose) message("Normalizing shapes...")
     normalized_shapes <- .normalize_shapes(shapes, start_point, align_orientation, verbose)
@@ -109,13 +119,25 @@ shape_analysis <- function(shape_dir,
   
   # Perform Elliptical Fourier Analysis ----
   if (verbose) message("Performing Elliptical Fourier Analysis...")
-  # If using raw shapes, do not apply EFA normalization (keep as-is)
-  effective_norm <- if (isTRUE(use_raw_shapes)) FALSE else norm
-  efa_results <- .perform_efa(normalized_shapes, effective_norm, harmonics, verbose)
+  # If using raw shapes, do not apply EFA normalization and set start = TRUE
+  if (isTRUE(use_raw_shapes)) {
+    efa_results <- .perform_efa(normalized_shapes, norm = FALSE, harmonics = harmonics, start = TRUE, verbose = verbose)
+  } else {
+    efa_results <- .perform_efa(normalized_shapes, norm = norm, harmonics = harmonics, start = NULL, verbose = verbose)
+  }
   
   # Perform PCA ----
   if (verbose) message("Performing Principal Component Analysis...")
-  pca_results <- .perform_pca(efa_results, verbose)
+  if (isTRUE(use_raw_shapes)) {
+    # Match manual script: center = TRUE, scale. = FALSE
+    pca_results <- tryCatch({
+      Momocs::PCA(efa_results, center = TRUE, scale. = FALSE)
+    }, error = function(e) {
+      stop("Principal Component Analysis failed: ", conditionMessage(e), call. = FALSE)
+    })
+  } else {
+    pca_results <- .perform_pca(efa_results, verbose)
+  }
   
   # Extract and format results ----
   if (verbose) message("Extracting PCA scores...")
@@ -164,7 +186,7 @@ shape_analysis <- function(shape_dir,
   metadata <- list(
     n_shapes = length(shapes),
     n_harmonics = ifelse(is.null(harmonics), "automatic", harmonics),
-    normalization = norm,
+    normalization = if (isTRUE(use_raw_shapes)) FALSE else norm,
     used_raw_shapes = isTRUE(use_raw_shapes),
     start_point = start_point,
     analysis_date = Sys.time()
@@ -319,13 +341,13 @@ shape_analysis <- function(shape_dir,
 
 #' Perform Elliptical Fourier Analysis
 #' @noRd
-.perform_efa <- function(normalized_shapes, norm, harmonics, verbose) {
+.perform_efa <- function(normalized_shapes, norm, harmonics, start = NULL, verbose) {
   tryCatch({
-    if (is.null(harmonics)) {
-      efa_results <- Momocs::efourier(normalized_shapes, norm = norm)
-    } else {
-      efa_results <- Momocs::efourier(normalized_shapes, norm = norm, nb.h = harmonics)
-    }
+    # Build argument list to support optional 'start' parameter
+    args <- list(x = normalized_shapes, norm = norm)
+    if (!is.null(harmonics)) args$nb.h <- harmonics
+    if (!is.null(start)) args$start <- start
+    efa_results <- do.call(Momocs::efourier, args)
     
     if (verbose) message("EFA completed with normalization: ", norm)
     return(efa_results)
