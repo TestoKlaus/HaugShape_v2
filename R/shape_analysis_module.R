@@ -6,8 +6,6 @@
 shape_analysis_ui <- function(id) {
   ns <- NS(id)
   tagList(
-    # Enable JS helpers if available
-    if (requireNamespace("shinyjs", quietly = TRUE)) shinyjs::useShinyjs(),
     fluidRow(
       column(
         width = 12,
@@ -27,9 +25,7 @@ shape_analysis_ui <- function(id) {
           textInput(ns("output_file"), "Output Excel file name", value = "shape_analysis.xlsx"),
 
           # Parameters
-          checkboxInput(ns("norm"), "Normalize Fourier descriptors (norm)", value = TRUE),
-          checkboxInput(ns("use_raw_shapes"), "Use shapes 'as is' (manual pipeline)", value = FALSE),
-          helpText("When enabled: center -> scale -> slide using selected 'Start point'; efourier(norm = FALSE, start = TRUE); PCA(center = TRUE, scale. = FALSE). This overrides only 'Normalize'."),
+          checkboxInput(ns("norm"), "Align by first harmonic (unchecked: longest radius)", value = TRUE),
           selectInput(ns("start_point"), "Start point for alignment", choices = c("up","left","down","right"), selected = "left"),
           numericInput(ns("num_pcs"), "Number of PCs to plot (1-50)", value = 10, min = 1, max = 50, step = 1),
           numericInput(ns("harmonics"), "Harmonics (NULL for auto)", value = NA, min = 1, max = 100, step = 1),
@@ -63,7 +59,6 @@ shape_analysis_server <- function(id) {
     shinyfiles_ready <- reactiveVal(FALSE)
     momocs_ready <- reactiveVal(FALSE)
     openxlsx_ready <- reactiveVal(FALSE)
-  shinyjs_ready <- reactiveVal(FALSE)
 
     # Try to ensure dependencies
     observe({
@@ -89,15 +84,6 @@ shape_analysis_server <- function(id) {
         r2 <- requireNamespace("openxlsx", quietly = TRUE)
       }
       openxlsx_ready(isTRUE(r2))
-    })
-    observe({
-      r3 <- requireNamespace("shinyjs", quietly = TRUE)
-      if (!isTRUE(r3)) {
-        # best-effort install; don't hard fail if missing
-        try(install.packages("shinyjs", repos = "https://cran.r-project.org", quiet = TRUE), silent = TRUE)
-        r3 <- requireNamespace("shinyjs", quietly = TRUE)
-      }
-      shinyjs_ready(isTRUE(r3))
     })
 
     # Input directory chooser
@@ -161,15 +147,7 @@ shape_analysis_server <- function(id) {
     # Run analysis
     results <- reactiveVal(NULL)
 
-    # Disable UI controls when using raw shapes (only if shinyjs is available)
-    observeEvent(input$use_raw_shapes, ignoreInit = TRUE, handlerExpr = {
-      if (!isTRUE(shinyjs_ready())) return()
-      if (isTRUE(input$use_raw_shapes)) {
-        try(shinyjs::disable(ns("norm")), silent = TRUE)
-      } else {
-        try(shinyjs::enable(ns("norm")), silent = TRUE)
-      }
-    })
+    # No dynamic disabling required; single checkbox controls EFA normalization mode.
     observeEvent(input$run, {
       # Validate inputs
       sd <- if (isTRUE(shinyfiles_ready())) shape_dir() else input$shape_dir_fallback
@@ -208,11 +186,10 @@ shape_analysis_server <- function(id) {
 
       withProgress(message = "Running shape analysis...", value = 0, {
         incProgress(0.2, detail = "Processing shapes")
-        res <- tryCatch({
+          res <- tryCatch({
           shape_analysis(
             shape_dir = sd,
             norm = isTRUE(input$norm),
-            use_raw_shapes = isTRUE(input$use_raw_shapes),
             output_dir = od,
             output_file = of,
             num_pcs = as.integer(input$num_pcs),

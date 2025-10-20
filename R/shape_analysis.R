@@ -6,14 +6,10 @@
 #'
 #' @param shape_dir A character string specifying the directory containing shape files
 #'   (images in JPG format). The directory must exist and contain at least one valid JPG file.
-#' @param norm Logical. Should the Fourier descriptors be normalized? If TRUE, shapes are
-#'   normalized to the first harmonic. If FALSE, shapes are normalized to the longest radius.
-#'   Default is TRUE.
-#' @param use_raw_shapes Logical. When TRUE, apply the manual "as-is" pipeline to match
-#'   your R snippet: center -> scale -> slide direction "up"; then efourier with
-#'   norm = FALSE and start = TRUE; finally PCA with center = TRUE and scale. = FALSE.
-#'   This ignores the 'norm' and 'start_point' UI settings to reproduce the same values
-#'   as the manual run. Default is FALSE.
+#' @param norm Logical. Controls EFA normalization. If TRUE, Fourier descriptors are
+#'   normalized to the first harmonic ("align by first harmonic"). If FALSE, they are
+#'   normalized to the longest radius. Shapes are always centered, scaled, and slid to
+#'   the specified start direction prior to EFA. Default is TRUE.
 #' @param output_dir A character string specifying the directory where the Excel file will be saved.
 #'   If NULL, the file will be saved in the working directory.
 #' @param output_file A character string specifying the name of the Excel file where PCA scores will
@@ -39,7 +35,10 @@
 #' @details
 #' The function uses the `Momocs` package to import, normalize, and analyze shape outlines:
 #' - **Import**: Reads JPG/JPEG files and converts to shape outlines
-#' - **Normalization**: Centers, scales, and aligns shapes to consistent orientation
+#' - **Pre-processing**: Centers, scales, and slides shapes to a consistent start
+#'   direction (up/left/down/right)
+#' - **Normalization**: EFA descriptors normalized to first harmonic when `norm = TRUE`,
+#'   or to the longest radius when `norm = FALSE`
 #' - **Elliptical Fourier Analysis (EFA)**: Generates Fourier descriptors for the shape outlines
 #' - **Principal Component Analysis (PCA)**: Decomposes Fourier descriptors into principal components
 #'
@@ -85,7 +84,6 @@ shape_analysis <- function(shape_dir,
                           start_point = "left",
                           harmonics = NULL,
                           align_orientation = FALSE,
-                          use_raw_shapes = FALSE,
                           verbose = TRUE) {
   
   # Input validation ----
@@ -103,41 +101,25 @@ shape_analysis <- function(shape_dir,
   
   shapes <- .import_shape_files(shape_dir, verbose)
   
-  # Normalize shapes (unless raw mode) ----
-  if (isTRUE(use_raw_shapes)) {
-    # Match the user's manual script with user-selected direction:
-    # H %>% coo_center %>% coo_scale %>% coo_slidedirection(start_point)
-    if (verbose) message("Using 'as-is' pipeline: center -> scale -> slide '", start_point, "' (no EFA normalization)")
-    normalized_shapes <- shapes %>%
-      Momocs::coo_center() %>%
-      Momocs::coo_scale() %>%
-      Momocs::coo_slidedirection(start_point)
-  } else {
-    if (verbose) message("Normalizing shapes...")
-    normalized_shapes <- .normalize_shapes(shapes, start_point, align_orientation, verbose)
-  }
+  # Always pre-process: center -> scale -> slide in user-selected direction
+  if (verbose) message("Pre-processing shapes: center -> scale -> slide '", start_point, "'")
+  normalized_shapes <- .normalize_shapes(shapes, start_point, align_orientation, verbose)
   
   # Perform Elliptical Fourier Analysis ----
   if (verbose) message("Performing Elliptical Fourier Analysis...")
-  # If using raw shapes, do not apply EFA normalization and set start = TRUE
-  if (isTRUE(use_raw_shapes)) {
-    efa_results <- .perform_efa(normalized_shapes, norm = FALSE, harmonics = harmonics, start = TRUE, verbose = verbose)
-  } else {
-    efa_results <- .perform_efa(normalized_shapes, norm = norm, harmonics = harmonics, start = NULL, verbose = verbose)
-  }
+  # 'norm' controls whether descriptors are normalized to first harmonic (TRUE) or longest radius (FALSE)
+  # Use start = TRUE to set a consistent phasing across shapes.
+  efa_results <- .perform_efa(normalized_shapes, norm = norm, harmonics = harmonics, start = TRUE, verbose = verbose)
   
   # Perform PCA ----
   if (verbose) message("Performing Principal Component Analysis...")
-  if (isTRUE(use_raw_shapes)) {
-    # Match manual script: center = TRUE, scale. = FALSE
-    pca_results <- tryCatch({
-      Momocs::PCA(efa_results, center = TRUE, scale. = FALSE)
-    }, error = function(e) {
-      stop("Principal Component Analysis failed: ", conditionMessage(e), call. = FALSE)
-    })
-  } else {
-    pca_results <- .perform_pca(efa_results, verbose)
-  }
+  # Match manual script default: center = TRUE, scale. = FALSE (and keep fallback behavior if needed)
+  # We'll directly run with scale.=FALSE to be consistent; robust fallback no longer needed.
+  pca_results <- tryCatch({
+    Momocs::PCA(efa_results, center = TRUE, scale. = FALSE)
+  }, error = function(e) {
+    stop("Principal Component Analysis failed: ", conditionMessage(e), call. = FALSE)
+  })
   
   # Extract and format results ----
   if (verbose) message("Extracting PCA scores...")
@@ -186,8 +168,8 @@ shape_analysis <- function(shape_dir,
   metadata <- list(
     n_shapes = length(shapes),
     n_harmonics = ifelse(is.null(harmonics), "automatic", harmonics),
-    normalization = if (isTRUE(use_raw_shapes)) FALSE else norm,
-    used_raw_shapes = isTRUE(use_raw_shapes),
+    normalization = norm,
+    used_raw_shapes = FALSE,
     start_point = start_point,
     analysis_date = Sys.time()
   )
@@ -358,27 +340,7 @@ shape_analysis <- function(shape_dir,
 
 #' Perform Principal Component Analysis
 #' @noRd
-.perform_pca <- function(efa_results, verbose) {
-  # First attempt with scaling; on any error, retry without scaling.
-  # Some R installations/locales emit non-English messages (e.g., German),
-  # so pattern matching may miss zero-variance errors. We fallback regardless.
-  tryCatch({
-    pca_results <- Momocs::PCA(efa_results, center = TRUE, scale. = TRUE)
-    if (verbose) message("PCA completed successfully")
-    return(pca_results)
-  }, error = function(e1) {
-    msg1 <- conditionMessage(e1)
-    if (verbose) message("PCA with scaling failed (", msg1, "); retrying without scaling...")
-    # Retry without scaling
-    pca_results2 <- tryCatch({
-      Momocs::PCA(efa_results, center = TRUE, scale. = FALSE)
-    }, error = function(e2) {
-      stop("Principal Component Analysis failed: ", conditionMessage(e2), call. = FALSE)
-    })
-    if (verbose) message("PCA completed successfully (no scaling)")
-    return(pca_results2)
-  })
-}
+# No longer used: PCA is invoked directly with scale. = FALSE to match manual pipeline
 
 #' Extract PCA scores as data frame
 #' @noRd
