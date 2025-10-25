@@ -141,6 +141,8 @@ plotting_ui <- function(id) {
             numericInput(ns("export_height"), "Height (inches)", value = 8, min = 1, step = 0.5)
           ),
           numericInput(ns("export_dpi"), "DPI", value = 300, min = 72, step = 10),
+          tags$div(style = "margin-top:6px;", textOutput(ns("preview_size_txt"))),
+          numericInput(ns("export_scale"), "Scale (× preview pixels)", value = 3, min = 1, step = 0.5),
           tags$hr(),
           helpText("Prefer to edit the plot later in RStudio? Download the ggplot object:"),
           downloadButton(ns("download_plot_rds"), "Download ggplot (.rds)")
@@ -646,6 +648,12 @@ plotting_server <- function(id, data_reactive) {
       )
 
       # Build export options list
+      px_w <- tryCatch({
+        id <- session$ns("plot"); as.numeric(session$clientData[[paste0("output_", id, "_width")]])
+      }, error = function(...) NA_real_)
+      px_h <- tryCatch({
+        id <- session$ns("plot"); as.numeric(session$clientData[[paste0("output_", id, "_height")]])
+      }, error = function(...) NA_real_)
       export_options <- list(
         export = isTRUE(input$export),
         filename = if (nzchar(input$export_filename)) input$export_filename else "shape_plot_output",
@@ -656,7 +664,11 @@ plotting_server <- function(id, data_reactive) {
         format = input$export_format,
         width = if (isTRUE(input$export_custom_size)) input$export_width else NULL,
         height = if (isTRUE(input$export_custom_size)) input$export_height else NULL,
-        dpi = input$export_dpi
+        dpi = input$export_dpi,
+        match_preview = !isTRUE(input$export_custom_size),
+        preview_width_px = px_w,
+        preview_height_px = px_h,
+        scale = input$export_scale
       )
 
       # Call shape_plot
@@ -775,6 +787,18 @@ plotting_server <- function(id, data_reactive) {
         }
       }
       do.call(tagList, rows)
+    })
+
+    # Preview size readout (px) from client data
+    preview_px <- reactive({
+      id <- session$ns("plot")
+      w <- session$clientData[[paste0("output_", id, "_width")]]
+      h <- session$clientData[[paste0("output_", id, "_height")]]
+      list(w = as.numeric(w %||% NA_real_), h = as.numeric(h %||% NA_real_))
+    })
+    output$preview_size_txt <- renderText({
+      px <- preview_px()
+      if (is.finite(px$w) && is.finite(px$h)) sprintf("Preview size: %d × %d px", as.integer(px$w), as.integer(px$h)) else "Preview size: (detecting...)"
     })
 
       # Download handler: ggplot object as .rds for further editing in RStudio
