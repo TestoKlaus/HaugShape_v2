@@ -200,42 +200,56 @@ shape_plot <- function(data,
 #' Validate inputs for shape_plot function
 #' @noRd
 .validate_shape_plot_inputs <- function(data, x_col, y_col, group_col, group_vals, verbose) {
-  # Required args
+  # Check required parameters
   if (missing(data)) stop("'data' is required", call. = FALSE)
-  if (missing(x_col)) stop("'x_col' is required", call. = FALSE)
+  if (missing(x_col)) stop("'x_col' is required", call. = FALSE)  
   if (missing(y_col)) stop("'y_col' is required", call. = FALSE)
-
-  # Data
-  if (!is.data.frame(data)) stop("'data' must be a data frame", call. = FALSE)
-  if (nrow(data) == 0) stop("'data' cannot be empty", call. = FALSE)
-
-  # Columns
-  if (!is.character(x_col) || length(x_col) != 1 || !nzchar(x_col)) stop("'x_col' must be a non-empty string", call. = FALSE)
-  if (!is.character(y_col) || length(y_col) != 1 || !nzchar(y_col)) stop("'y_col' must be a non-empty string", call. = FALSE)
-  if (!x_col %in% colnames(data)) stop("Column '" , x_col , "' does not exist in data", call. = FALSE)
-  if (!y_col %in% colnames(data)) stop("Column '" , y_col , "' does not exist in data", call. = FALSE)
-
-  # Grouping
+  
+  # Check data
+  if (!is.data.frame(data)) {
+    stop("'data' must be a data frame", call. = FALSE)
+  }
+  if (nrow(data) == 0) {
+    stop("'data' cannot be empty", call. = FALSE)
+  }
+  
+  # Check column existence
+  if (!x_col %in% colnames(data)) {
+    stop("Column '", x_col, "' does not exist in data", call. = FALSE)
+  }
+  if (!y_col %in% colnames(data)) {
+    stop("Column '", y_col, "' does not exist in data", call. = FALSE)
+  }
+  
+  # Check group_col
   if (!is.null(group_col)) {
-    if (!is.character(group_col) || length(group_col) != 1 || !nzchar(group_col)) {
-      stop("'group_col' must be a single non-empty character string", call. = FALSE)
+    if (!is.character(group_col) || length(group_col) != 1) {
+      stop("'group_col' must be a single character string", call. = FALSE)
     }
-    if (!group_col %in% colnames(data)) stop("Column '" , group_col , "' does not exist in data", call. = FALSE)
+    if (!group_col %in% colnames(data)) {
+      stop("Column '", group_col, "' does not exist in data", call. = FALSE)
+    }
   }
-
-  # Group values
+  
+  # Check group_vals
   if (!is.null(group_vals) && !is.null(group_col)) {
-    valid_vals <- unique(data[[group_col]])
-    if (!all(group_vals %in% valid_vals)) {
-      missing_vals <- setdiff(group_vals, valid_vals)
-      stop("The following group values do not exist: ", paste(missing_vals, collapse = ", "),
-           "; valid values are: ", paste(valid_vals, collapse = ", "), call. = FALSE)
+    if (!all(group_vals %in% unique(data[[group_col]]))) {
+      missing_vals <- group_vals[!group_vals %in% unique(data[[group_col]])]
+      stop("The following group values do not exist: ", paste(missing_vals, collapse = ", "), 
+           call. = FALSE)
     }
   }
-
-  # Verbose
-  if (!is.logical(verbose) || length(verbose) != 1) stop("'verbose' must be a single logical value", call. = FALSE)
+  
+  # Check verbose
+  if (!is.logical(verbose) || length(verbose) != 1) {
+    stop("'verbose' must be a single logical value", call. = FALSE)
+  }
 }
+
+# Parameter Setup ----
+
+#' Setup default parameters for shape_plot
+#' @noRd
 .setup_shape_plot_params <- function(data, x_col, y_col, group_col, group_vals,
                                     styling, features, labels, export_options, verbose) {
   
@@ -1078,6 +1092,7 @@ shape_plot <- function(data,
 #' Export plot to file
 #' @noRd
 .export_plot <- function(plot, export_options, verbose) {
+  
   # Setup file path
   if (!is.null(export_options$path)) {
     if (!dir.exists(export_options$path)) {
@@ -1087,66 +1102,10 @@ shape_plot <- function(data,
   } else {
     file_path <- paste0(export_options$filename, ".", export_options$format)
   }
-
+  
   if (verbose) message("Exporting plot to: ", file_path)
-
-  fmt <- tolower(export_options$format)
-
-  # Pixel-perfect export when matching preview
-  match_preview <- isTRUE(export_options$match_preview)
-  px_w <- suppressWarnings(as.numeric(export_options$preview_width_px))
-  px_h <- suppressWarnings(as.numeric(export_options$preview_height_px))
-  scale <- suppressWarnings(as.numeric(export_options$scale)); if (!is.finite(scale) || scale <= 0) scale <- 1
-  dpi <- suppressWarnings(as.numeric(export_options$dpi)); if (!is.finite(dpi) || dpi <= 0) dpi <- 300
-
-  use_ragg <- requireNamespace("ragg", quietly = TRUE)
-  if (match_preview && is.finite(px_w) && is.finite(px_h)) {
-    width_px <- max(1L, as.integer(round(px_w * scale)))
-    height_px <- max(1L, as.integer(round(px_h * scale)))
-    if (use_ragg) {
-      dev_fun <- switch(fmt,
-        "tif" = ragg::agg_tiff,
-        "tiff" = ragg::agg_tiff,
-        "jpg" = ragg::agg_jpeg,
-        "jpeg" = ragg::agg_jpeg,
-        "png" = ragg::agg_png,
-        NULL
-      )
-      if (is.null(dev_fun)) stop("Unsupported export format: ", fmt, call. = FALSE)
-      dev_fun(filename = file_path, width = width_px, height = height_px, units = "px", res = dpi)
-      print(plot)
-      grDevices::dev.off()
-      if (verbose) message("Plot exported successfully (ragg, pixel-perfect)")
-      return(invisible(TRUE))
-    } else {
-      # Fallback using inches and dpi
-      width_in <- width_px / dpi
-      height_in <- height_px / dpi
-      device <- switch(fmt,
-        "tif" = grDevices::tiff,
-        "tiff" = grDevices::tiff,
-        "jpg" = grDevices::jpeg,
-        "jpeg" = grDevices::jpeg,
-        "png" = grDevices::png,
-        NULL
-      )
-      if (is.null(device)) stop("Unsupported export format: ", fmt, call. = FALSE)
-      ggplot2::ggsave(
-        filename = file_path,
-        plot = plot,
-        device = device,
-        width = width_in,
-        height = height_in,
-        dpi = dpi,
-        units = "in",
-        limitsize = FALSE
-      )
-      if (verbose) message("Plot exported successfully (base device)")
-      return(invisible(TRUE))
-    }
-  }
-
-  # Inch-based export; maintain aspect if only one dimension is provided
+  
+  # Determine aspect ratio from plot build if available, fallback to 1 (square)
   aspect_ratio <- try({
     cf <- plot$coordinates
     r <- tryCatch(cf$ratio, error = function(...) NULL)
@@ -1154,9 +1113,11 @@ shape_plot <- function(data,
   }, silent = TRUE)
   if (!is.numeric(aspect_ratio) || !is.finite(aspect_ratio) || aspect_ratio <= 0) aspect_ratio <- 1
 
+  # Compute width/height if one is missing to preserve aspect
   width <- export_options$width
   height <- export_options$height
   if (is.null(width) && is.null(height)) {
+    # Sensible defaults maintaining aspect
     height <- 6
     width <- height / aspect_ratio
   } else if (is.null(width) && !is.null(height)) {
@@ -1165,6 +1126,8 @@ shape_plot <- function(data,
     height <- width * aspect_ratio
   }
 
+  # Choose device based on format to avoid ambiguity
+  fmt <- tolower(export_options$format)
   device <- switch(fmt,
     "tif" = grDevices::tiff,
     "tiff" = grDevices::tiff,
@@ -1173,17 +1136,19 @@ shape_plot <- function(data,
     "png" = grDevices::png,
     NULL
   )
-  if (is.null(device)) stop("Unsupported export format: ", fmt, call. = FALSE)
 
-  ggplot2::ggsave(
-    filename = file_path,
-    plot = plot,
-    device = device,
-    width = width,
-    height = height,
-    dpi = dpi,
-    units = "in",
-    limitsize = FALSE
-  )
-  if (verbose) message("Plot exported successfully")
+  tryCatch({
+    ggplot2::ggsave(
+      filename = file_path,
+      plot = plot,
+      width = width,
+      height = height,
+      dpi = export_options$dpi,
+      device = device
+    )
+    
+    if (verbose) message("Plot exported successfully")
+  }, error = function(e) {
+    stop("Failed to export plot: ", e$message, call. = FALSE)
+  })
 }
