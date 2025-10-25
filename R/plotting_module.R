@@ -49,7 +49,17 @@ plotting_ui <- function(id) {
           width = 12,
           collapsible = TRUE,
           collapsed = TRUE,
-          selectInput(ns("aspect"), "Plot aspect ratio", choices = c("2:1","1:1"), selected = "2:1")
+          selectInput(
+            ns("aspect"),
+            "Plot aspect ratio",
+            choices = c(
+              "Auto (free unless shapes)" = "auto",
+              "Free (no lock)" = "free",
+              "1:1" = "1:1",
+              "2:1" = "2:1"
+            ),
+            selected = "auto"
+          )
         ),
         box(
           title = "Features - Hulls",
