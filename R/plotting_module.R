@@ -49,7 +49,17 @@ plotting_ui <- function(id) {
           width = 12,
           collapsible = TRUE,
           collapsed = TRUE,
-          selectInput(ns("aspect"), "Plot aspect ratio", choices = c("2:1","1:1"), selected = "2:1")
+          selectInput(
+            ns("aspect"),
+            "Plot aspect ratio",
+            choices = c(
+              "Auto (free unless shapes)" = "auto",
+              "Free (no lock)" = "free",
+              "1:1" = "1:1",
+              "2:1" = "2:1"
+            ),
+            selected = "auto"
+          )
         ),
         box(
           title = "Features - Hulls",
@@ -127,13 +137,13 @@ plotting_ui <- function(id) {
           checkboxInput(ns("export_custom_size"), "Set custom size (inches)", value = FALSE),
           conditionalPanel(
             condition = sprintf("input['%s']", ns("export_custom_size")),
-            ns = ns,
-            tagList(
-              numericInput(ns("export_width"), "Width (inches)", value = 8, min = 1, step = 0.5),
-              numericInput(ns("export_height"), "Height (inches)", value = 8, min = 1, step = 0.5)
-            )
+            numericInput(ns("export_width"), "Width (inches)", value = 8, min = 1, step = 0.5),
+            numericInput(ns("export_height"), "Height (inches)", value = 8, min = 1, step = 0.5)
           ),
-          numericInput(ns("export_dpi"), "DPI", value = 300, min = 72, step = 10)
+          numericInput(ns("export_dpi"), "DPI", value = 300, min = 72, step = 10),
+          tags$hr(),
+          helpText("Prefer to edit the plot later in RStudio? Download the ggplot object:"),
+          downloadButton(ns("download_plot_rds"), "Download ggplot (.rds)")
         ),
         div(style = "margin: 10px 0;",
             actionButton(ns("render"), "Render plot", class = "btn-success btn-lg")
@@ -766,6 +776,20 @@ plotting_server <- function(id, data_reactive) {
       }
       do.call(tagList, rows)
     })
+
+      # Download handler: ggplot object as .rds for further editing in RStudio
+      output$download_plot_rds <- downloadHandler(
+        filename = function() {
+          stem <- input$export_filename
+          if (is.null(stem) || !nzchar(stem)) stem <- "shape_plot_output"
+          paste0(stem, ".rds")
+        },
+        content = function(file) {
+          p <- plot_obj()
+          validate(need(!is.null(p), "No plot has been rendered yet. Click 'Render plot' first."))
+          saveRDS(p, file)
+        }
+      )
 
     # Removed: hull specimens modal button and observer (now shown inline in the legend)
 

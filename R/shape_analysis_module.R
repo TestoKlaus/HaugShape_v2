@@ -25,8 +25,7 @@ shape_analysis_ui <- function(id) {
           textInput(ns("output_file"), "Output Excel file name", value = "shape_analysis.xlsx"),
 
           # Parameters
-          checkboxInput(ns("norm"), "Normalize Fourier descriptors (norm)", value = TRUE),
-          checkboxInput(ns("use_raw_shapes"), "Use raw shapes (skip normalization)", value = FALSE),
+          checkboxInput(ns("norm"), "Align by first harmonic (unchecked: longest radius)", value = TRUE),
           selectInput(ns("start_point"), "Start point for alignment", choices = c("up","left","down","right"), selected = "left"),
           numericInput(ns("num_pcs"), "Number of PCs to plot (1-50)", value = 10, min = 1, max = 50, step = 1),
           numericInput(ns("harmonics"), "Harmonics (NULL for auto)", value = NA, min = 1, max = 100, step = 1),
@@ -147,6 +146,8 @@ shape_analysis_server <- function(id) {
 
     # Run analysis
     results <- reactiveVal(NULL)
+
+    # No dynamic disabling required; single checkbox controls EFA normalization mode.
     observeEvent(input$run, {
       # Validate inputs
       sd <- if (isTRUE(shinyfiles_ready())) shape_dir() else input$shape_dir_fallback
@@ -185,11 +186,10 @@ shape_analysis_server <- function(id) {
 
       withProgress(message = "Running shape analysis...", value = 0, {
         incProgress(0.2, detail = "Processing shapes")
-        res <- tryCatch({
+          res <- tryCatch({
           shape_analysis(
             shape_dir = sd,
             norm = isTRUE(input$norm),
-            use_raw_shapes = isTRUE(input$use_raw_shapes),
             output_dir = od,
             output_file = of,
             num_pcs = as.integer(input$num_pcs),

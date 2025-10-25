@@ -23,7 +23,12 @@
 #'   \item{plot_style}{Style theme: "Haug", "inverted_Haug", "publication" (default: "Haug")}
 #'   \item{point}{List with point styling (color, fill, shape, size)}
 #'   \item{text}{List with text styling (title_size, label_size, tick_size)}
-#'   \item{axis}{List with axis styling (linewidth, tick_length, tick_margin, fixed_aspect)}
+#'   \item{axis}{List with axis styling (linewidth, tick_length, tick_margin, central_axes, aspect)}
+#'
+#' Aspect options:
+#' - "auto" (default): no fixed aspect unless shapes are drawn, then 1:1
+#' - "free": never fix aspect (let ggplot scale axes independently)
+#' - "1:1" or "2:1": lock aspect using coord_fixed (interpreted as width:height)
 #' }
 #'
 #' The `features` parameter accepts a list with the following options:
@@ -140,15 +145,42 @@ shape_plot <- function(data,
   
   # Apply styling and theming ----
   plot <- .apply_plot_styling(plot, params)
-  # Apply aspect (1:1 or 2:1) to avoid distortion when resizing
+  # Apply aspect (auto/free or fixed) to avoid distortion when needed
   asp_choice <- params$styling$axis$aspect
-  if (!is.null(asp_choice)) {
-    ratio <- switch(as.character(asp_choice),
-      "1:1" = 1,
-      "2:1" = 0.5, # coord_fixed uses y/x; width:height 2:1 -> y/x = 1/2
-      1
-    )
-    plot <- plot + ggplot2::coord_fixed(ratio = ratio, expand = TRUE)
+  # Interpret aspect option
+  apply_fixed <- FALSE
+  fixed_ratio <- 1
+  if (is.null(asp_choice) || identical(asp_choice, "") || identical(asp_choice, "free")) {
+    apply_fixed <- FALSE
+  } else if (identical(asp_choice, "auto")) {
+    # Only lock when shapes are drawn to preserve geometry
+    if (isTRUE(params$features$shapes$show)) {
+      apply_fixed <- TRUE
+      fixed_ratio <- 1
+    }
+  } else if (is.numeric(asp_choice) && is.finite(asp_choice) && asp_choice > 0) {
+    apply_fixed <- TRUE
+    fixed_ratio <- as.numeric(asp_choice)
+  } else if (is.character(asp_choice)) {
+    # Accept tokens like "1:1", "2:1" (width:height)
+    if (grepl(":", asp_choice, fixed = TRUE)) {
+      parts <- strsplit(asp_choice, ":", fixed = TRUE)[[1]]
+      if (length(parts) == 2) {
+        w <- suppressWarnings(as.numeric(parts[1]))
+        h <- suppressWarnings(as.numeric(parts[2]))
+        if (is.finite(w) && is.finite(h) && w > 0) {
+          apply_fixed <- TRUE
+          fixed_ratio <- h / w # coord_fixed ratio is y/x
+        }
+      }
+    } else if (nzchar(asp_choice)) {
+      # Any other non-empty string: fallback to fixed 1:1
+      apply_fixed <- TRUE
+      fixed_ratio <- 1
+    }
+  }
+  if (apply_fixed) {
+    plot <- plot + ggplot2::coord_fixed(ratio = fixed_ratio, expand = TRUE)
   }
   # Centralized axes overlay (legacy style)
   if (isTRUE(params$styling$axis$central_axes)) {
@@ -249,7 +281,7 @@ shape_plot <- function(data,
       tick_length = 0.005,
       tick_margin = 0.05,
       central_axes = TRUE,
-      aspect = "2:1"
+      aspect = "auto"  # default: free aspect unless shapes are shown
     )
   )
   styling <- .merge_nested_lists(styling_defaults, styling)
@@ -258,7 +290,7 @@ shape_plot <- function(data,
     if (isTRUE(styling$axis$fixed_aspect)) {
       styling$axis$aspect <- "1:1"
     } else if (isFALSE(styling$axis$fixed_aspect) && is.null(styling$axis$aspect)) {
-      styling$axis$aspect <- "2:1"
+      styling$axis$aspect <- "free"
     }
   }
   # Ensure point aesthetics are not NULL after merge (UI may send NULLs)
@@ -889,6 +921,9 @@ shape_plot <- function(data,
       x = params$labels$x_label,
       y = params$labels$y_label
     ) +
+    # Force axes to start at 0 regardless of data minima
+    ggplot2::scale_x_continuous(limits = c(0, NA), expand = ggplot2::expansion(mult = c(0, 0.02))) +
+    ggplot2::scale_y_continuous(limits = c(0, NA), expand = ggplot2::expansion(mult = c(0, 0.02))) +
     ggplot2::theme_minimal() +
     ggplot2::theme(
       plot.background = ggplot2::element_rect(fill = style_colors$background, color = NA),
@@ -925,6 +960,9 @@ shape_plot <- function(data,
   # Ranges and padding
   x_range <- range(data[[x_col]], na.rm = TRUE)
   y_range <- range(data[[y_col]], na.rm = TRUE)
+  # Always start axes at 0 for both x and y
+  x_range[1] <- 0
+  y_range[1] <- 0
   x_expand <- 0.05 * (x_range[2] - x_range[1])
   y_expand <- 0.05 * (y_range[2] - y_range[1])
 
