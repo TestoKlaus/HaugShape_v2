@@ -129,7 +129,7 @@ plotting_ui <- function(id) {
           width = 12,
           collapsible = TRUE,
           collapsed = TRUE,
-          checkboxInput(ns("export"), "Export using shape_plot", value = FALSE),
+          checkboxInput(ns("export"), "Export on Render (legacy)", value = FALSE),
           textInput(ns("export_filename"), "Filename (without extension)", value = "shape_plot_output"),
           uiOutput(ns("export_dir_ui")),
           textOutput(ns("export_dir_txt")),
@@ -145,7 +145,8 @@ plotting_ui <- function(id) {
           numericInput(ns("export_scale"), "Scale (× preview pixels)", value = 3, min = 1, step = 0.5),
           tags$hr(),
           helpText("Prefer to edit the plot later in RStudio? Download the ggplot object:"),
-          downloadButton(ns("download_plot_rds"), "Download ggplot (.rds)")
+          downloadButton(ns("download_plot_rds"), "Download ggplot (.rds)"),
+          actionButton(ns("export_now"), "Export now", class = "btn-primary", style = "margin-left: 8px;")
         ),
         div(style = "margin: 10px 0;",
             actionButton(ns("render"), "Render plot", class = "btn-success btn-lg")
@@ -655,7 +656,7 @@ plotting_server <- function(id, data_reactive) {
         id <- session$ns("plot"); as.numeric(session$clientData[[paste0("output_", id, "_height")]])
       }, error = function(...) NA_real_)
       export_options <- list(
-        export = isTRUE(input$export),
+        export = FALSE,  # avoid exporting during render; use Export now button for pixel-perfect export
         filename = if (nzchar(input$export_filename)) input$export_filename else "shape_plot_output",
         path = {
           p <- export_dir_path()
@@ -799,6 +800,40 @@ plotting_server <- function(id, data_reactive) {
     output$preview_size_txt <- renderText({
       px <- preview_px()
       if (is.finite(px$w) && is.finite(px$h)) sprintf("Preview size: %d × %d px", as.integer(px$w), as.integer(px$h)) else "Preview size: (detecting...)"
+    })
+
+    # Export now: export current plot object with match-preview sizing
+    observeEvent(input$export_now, {
+      p <- plot_obj(); req(p)
+      # Rebuild export options using current inputs and detected preview size
+      px_w <- tryCatch({
+        id <- session$ns("plot"); as.numeric(session$clientData[[paste0("output_", id, "_width")]])
+      }, error = function(...) NA_real_)
+      px_h <- tryCatch({
+        id <- session$ns("plot"); as.numeric(session$clientData[[paste0("output_", id, "_height")]])
+      }, error = function(...) NA_real_)
+      opts <- list(
+        export = TRUE,
+        filename = if (nzchar(input$export_filename)) input$export_filename else "shape_plot_output",
+        path = {
+          pth <- export_dir_path(); if (!is.null(pth) && nzchar(pth)) pth else NULL
+        },
+        format = input$export_format,
+        width = if (isTRUE(input$export_custom_size)) input$export_width else NULL,
+        height = if (isTRUE(input$export_custom_size)) input$export_height else NULL,
+        dpi = input$export_dpi,
+        match_preview = !isTRUE(input$export_custom_size),
+        preview_width_px = px_w,
+        preview_height_px = px_h,
+        scale = input$export_scale
+      )
+      # Use the same export helper as shape_plot
+      tryCatch({
+        .export_plot(p, opts, verbose = TRUE)
+        showNotification("Plot exported.", type = "message")
+      }, error = function(e) {
+        showNotification(paste("Export failed:", conditionMessage(e)), type = "error")
+      })
     })
 
       # Download handler: ggplot object as .rds for further editing in RStudio
