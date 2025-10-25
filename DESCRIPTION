@@ -2,8 +2,8 @@ Package: HaugShapeV2
 Type: Package
 Title: Morphometric Shape Analysis and Visualization Tools
 Version: 0.1.0
-Author: Your Name <your.email@example.com>
-Maintainer: Your Name <your.email@example.com>
+Author: Colin Hassenbach <c.hassenbach@gmail.com>
+Maintainer: Colin Hassenbach <c.hassenbach@gmail.com>
 Description: A comprehensive toolkit for morphometric shape analysis, including 
     Elliptical Fourier Analysis (EFA), Principal Component Analysis (PCA), 
     convex hull analysis, and advanced visualization tools for biological 
