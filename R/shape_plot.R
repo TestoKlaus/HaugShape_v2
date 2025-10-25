@@ -921,6 +921,8 @@ shape_plot <- function(data,
       x = params$labels$x_label,
       y = params$labels$y_label
     ) +
+    # Ensure axes always include 0 so plots start at 0 when data are all positive
+    ggplot2::expand_limits(x = 0, y = 0) +
     ggplot2::theme_minimal() +
     ggplot2::theme(
       plot.background = ggplot2::element_rect(fill = style_colors$background, color = NA),
@@ -957,6 +959,9 @@ shape_plot <- function(data,
   # Ranges and padding
   x_range <- range(data[[x_col]], na.rm = TRUE)
   y_range <- range(data[[y_col]], na.rm = TRUE)
+  # Always include 0 as lower bound if data are entirely positive on an axis
+  x_range[1] <- min(0, x_range[1])
+  y_range[1] <- min(0, y_range[1])
   x_expand <- 0.05 * (x_range[2] - x_range[1])
   y_expand <- 0.05 * (y_range[2] - y_range[1])
 
