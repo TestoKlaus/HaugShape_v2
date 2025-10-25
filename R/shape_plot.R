@@ -194,6 +194,48 @@ shape_plot <- function(data,
   
   return(plot)
 }
+
+# Input Validation ----
+
+#' Validate inputs for shape_plot function
+#' @noRd
+.validate_shape_plot_inputs <- function(data, x_col, y_col, group_col, group_vals, verbose) {
+  # Required args
+  if (missing(data)) stop("'data' is required", call. = FALSE)
+  if (missing(x_col)) stop("'x_col' is required", call. = FALSE)
+  if (missing(y_col)) stop("'y_col' is required", call. = FALSE)
+
+  # Data
+  if (!is.data.frame(data)) stop("'data' must be a data frame", call. = FALSE)
+  if (nrow(data) == 0) stop("'data' cannot be empty", call. = FALSE)
+
+  # Columns
+  if (!is.character(x_col) || length(x_col) != 1 || !nzchar(x_col)) stop("'x_col' must be a non-empty string", call. = FALSE)
+  if (!is.character(y_col) || length(y_col) != 1 || !nzchar(y_col)) stop("'y_col' must be a non-empty string", call. = FALSE)
+  if (!x_col %in% colnames(data)) stop("Column '" , x_col , "' does not exist in data", call. = FALSE)
+  if (!y_col %in% colnames(data)) stop("Column '" , y_col , "' does not exist in data", call. = FALSE)
+
+  # Grouping
+  if (!is.null(group_col)) {
+    if (!is.character(group_col) || length(group_col) != 1 || !nzchar(group_col)) {
+      stop("'group_col' must be a single non-empty character string", call. = FALSE)
+    }
+    if (!group_col %in% colnames(data)) stop("Column '" , group_col , "' does not exist in data", call. = FALSE)
+  }
+
+  # Group values
+  if (!is.null(group_vals) && !is.null(group_col)) {
+    valid_vals <- unique(data[[group_col]])
+    if (!all(group_vals %in% valid_vals)) {
+      missing_vals <- setdiff(group_vals, valid_vals)
+      stop("The following group values do not exist: ", paste(missing_vals, collapse = ", "),
+           "; valid values are: ", paste(valid_vals, collapse = ", "), call. = FALSE)
+    }
+  }
+
+  # Verbose
+  if (!is.logical(verbose) || length(verbose) != 1) stop("'verbose' must be a single logical value", call. = FALSE)
+}
 .setup_shape_plot_params <- function(data, x_col, y_col, group_col, group_vals,
                                     styling, features, labels, export_options, verbose) {
   
