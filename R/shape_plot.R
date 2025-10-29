@@ -180,7 +180,11 @@ shape_plot <- function(data,
     }
   }
   if (apply_fixed) {
-    plot <- plot + ggplot2::coord_fixed(ratio = fixed_ratio, expand = TRUE)
+    # Avoid clipping custom annotations near the panel edges
+    plot <- plot + ggplot2::coord_fixed(ratio = fixed_ratio, expand = TRUE, clip = "off")
+  } else {
+    # Keep free coordinates but ensure annotations outside the panel aren't cropped
+    plot <- plot + ggplot2::coord_cartesian(clip = "off")
   }
   # Centralized axes overlay (legacy style)
   if (isTRUE(params$styling$axis$central_axes)) {
@@ -921,9 +925,9 @@ shape_plot <- function(data,
       x = params$labels$x_label,
       y = params$labels$y_label
     ) +
-    # Force axes to start at 0 regardless of data minima
-    ggplot2::scale_x_continuous(limits = c(0, NA), expand = ggplot2::expansion(mult = c(0, 0.02))) +
-    ggplot2::scale_y_continuous(limits = c(0, NA), expand = ggplot2::expansion(mult = c(0, 0.02))) +
+    # Let ggplot compute full data-driven ranges (no forced 0 lower bound)
+    ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = c(0.02, 0.02))) +
+    ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0.02, 0.02))) +
     ggplot2::theme_minimal() +
     ggplot2::theme(
       plot.background = ggplot2::element_rect(fill = style_colors$background, color = NA),
@@ -960,9 +964,6 @@ shape_plot <- function(data,
   # Ranges and padding
   x_range <- range(data[[x_col]], na.rm = TRUE)
   y_range <- range(data[[y_col]], na.rm = TRUE)
-  # Always start axes at 0 for both x and y
-  x_range[1] <- 0
-  y_range[1] <- 0
   x_expand <- 0.05 * (x_range[2] - x_range[1])
   y_expand <- 0.05 * (y_range[2] - y_range[1])
 
@@ -994,7 +995,7 @@ shape_plot <- function(data,
       axis.text = ggplot2::element_blank(),
       axis.title.x = ggplot2::element_blank(),
       axis.title.y = ggplot2::element_blank(),
-      plot.margin = ggplot2::margin(tick_margin, tick_margin, tick_margin, tick_margin)
+      plot.margin = ggplot2::margin(tick_margin, tick_margin, tick_margin, tick_margin, unit = "lines")
     )
 
   # Arrowed axes through origin
