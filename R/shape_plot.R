@@ -285,8 +285,7 @@ shape_plot <- function(data,
       tick_length = 0.005,
       tick_margin = 0.05,
       central_axes = TRUE,
-      aspect = "auto",  # default: free aspect unless shapes are shown
-      clamp_zero = FALSE # do not clamp to zero by default
+      aspect = "auto"  # default: free aspect unless shapes are shown
     )
   )
   styling <- .merge_nested_lists(styling_defaults, styling)
@@ -926,20 +925,8 @@ shape_plot <- function(data,
       x = params$labels$x_label,
       y = params$labels$y_label
     ) +
-    {
-      # Apply axis scaling based on clamp_zero option
-      if (isTRUE(params$styling$axis$clamp_zero)) {
-        list(
-          ggplot2::scale_x_continuous(limits = c(0, NA), expand = ggplot2::expansion(mult = c(0, 0.02))),
-          ggplot2::scale_y_continuous(limits = c(0, NA), expand = ggplot2::expansion(mult = c(0, 0.02)))
-        )
-      } else {
-        list(
-          ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = c(0.02, 0.02))),
-          ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0.02, 0.02)))
-        )
-      }
-    } +
+    ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = c(0.02, 0.02))) +
+    ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0.02, 0.02))) +
     ggplot2::theme_minimal() +
     ggplot2::theme(
       plot.background = ggplot2::element_rect(fill = style_colors$background, color = NA),
@@ -973,9 +960,12 @@ shape_plot <- function(data,
 #' Add centralized axes with arrows, custom ticks, and label fields (legacy style)
 #' @noRd
 .apply_central_axes <- function(plot, data, x_col, y_col, params) {
-  # Ranges and padding
-  x_range <- range(data[[x_col]], na.rm = TRUE)
-  y_range <- range(data[[y_col]], na.rm = TRUE)
+  # Ensure the panel includes zero on both axes without clamping data to >= 0
+  plot <- plot + ggplot2::expand_limits(x = 0, y = 0)
+
+  # Ranges and padding (force 0 to be part of the range used for axis drawing)
+  x_range <- range(c(0, data[[x_col]]), na.rm = TRUE)
+  y_range <- range(c(0, data[[y_col]]), na.rm = TRUE)
   x_expand <- 0.05 * (x_range[2] - x_range[1])
   y_expand <- 0.05 * (y_range[2] - y_range[1])
 

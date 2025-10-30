@@ -59,8 +59,7 @@ plotting_ui <- function(id) {
               "2:1" = "2:1"
             ),
             selected = "auto"
-          ),
-          checkboxInput(ns("clamp_zero"), "Clamp axes at zero (x ≥ 0, y ≥ 0)", value = FALSE)
+          )
         ),
         box(
           title = "Features - Hulls",
@@ -518,8 +517,7 @@ plotting_server <- function(id, data_reactive) {
           linewidth = input$axis_linewidth,
           tick_length = input$tick_length,
           tick_margin = input$tick_margin,
-          aspect = input$aspect,
-          clamp_zero = isTRUE(input$clamp_zero)
+          aspect = input$aspect
         )
       )
 
