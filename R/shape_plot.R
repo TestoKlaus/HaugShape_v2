@@ -285,7 +285,8 @@ shape_plot <- function(data,
       tick_length = 0.005,
       tick_margin = 0.05,
       central_axes = TRUE,
-      aspect = "auto"  # default: free aspect unless shapes are shown
+      aspect = "auto",  # default: free aspect unless shapes are shown
+      clamp_zero = FALSE # do not clamp to zero by default
     )
   )
   styling <- .merge_nested_lists(styling_defaults, styling)
@@ -925,9 +926,20 @@ shape_plot <- function(data,
       x = params$labels$x_label,
       y = params$labels$y_label
     ) +
-    # Let ggplot compute full data-driven ranges (no forced 0 lower bound)
-    ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = c(0.02, 0.02))) +
-    ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0.02, 0.02))) +
+    {
+      # Apply axis scaling based on clamp_zero option
+      if (isTRUE(params$styling$axis$clamp_zero)) {
+        list(
+          ggplot2::scale_x_continuous(limits = c(0, NA), expand = ggplot2::expansion(mult = c(0, 0.02))),
+          ggplot2::scale_y_continuous(limits = c(0, NA), expand = ggplot2::expansion(mult = c(0, 0.02)))
+        )
+      } else {
+        list(
+          ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = c(0.02, 0.02))),
+          ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0.02, 0.02)))
+        )
+      }
+    } +
     ggplot2::theme_minimal() +
     ggplot2::theme(
       plot.background = ggplot2::element_rect(fill = style_colors$background, color = NA),
