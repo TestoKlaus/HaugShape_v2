@@ -20,15 +20,15 @@ data_import_ui <- function(id) {
       column(
         width = 12,
         box(
-          title = "Upload Excel File",
+          title = "Upload Spreadsheet",
           status = "primary",
           solidHeader = TRUE,
           width = 12,
           collapsible = TRUE,
           fileInput(
             inputId = ns("file"),
-            label = "Choose an Excel file (.xlsx or .xls)",
-            accept = c(".xlsx", ".xls"),
+            label = "Choose a spreadsheet (.xlsx, .xls, or .ods)",
+            accept = c(".xlsx", ".xls", ".ods"),
             buttonLabel = "Browse...",
             placeholder = "No file selected"
           ),
@@ -135,11 +135,22 @@ data_import_server <- function(id) {
 
       # Validate file extension
       ext <- tolower(tools::file_ext(input$file$name))
-      validate(need(ext %in% c("xlsx", "xls"), "Please upload a .xlsx or .xls file."))
+      validate(need(ext %in% c("xlsx", "xls", "ods"), "Please upload a .xlsx, .xls, or .ods file."))
 
       # Get sheet names safely
       sheets <- tryCatch({
-        openxlsx::getSheetNames(path)
+        if (identical(ext, "ods")) {
+          # Ensure readODS is available
+          if (!requireNamespace("readODS", quietly = TRUE)) {
+            try(install.packages("readODS", repos = "https://cran.r-project.org", quiet = TRUE), silent = TRUE)
+          }
+          validate(need(requireNamespace("readODS", quietly = TRUE), "Package 'readODS' is required to read .ods files."))
+          # List sheet names from ODS
+          readODS::ods_sheets(path)
+        } else {
+          # Default to openxlsx for Excel files
+          openxlsx::getSheetNames(path)
+        }
       }, error = function(e) {
         warning(e)
         character()
@@ -166,14 +177,28 @@ data_import_server <- function(id) {
       sheets <- sheet_names()
       sheet_to_read <- if (length(sheets) == 1) sheets[[1]] else input$sheet
       req(sheet_to_read)
+      ext <- tolower(tools::file_ext(input$file$name))
 
       # Read using openxlsx; detect dates and keep as data.frame
       df <- tryCatch({
-        openxlsx::read.xlsx(
-          xlsxFile = input$file$datapath,
-          sheet = sheet_to_read,
-          detectDates = TRUE
-        )
+        if (identical(ext, "ods")) {
+          # Ensure readODS is available
+          if (!requireNamespace("readODS", quietly = TRUE)) {
+            try(install.packages("readODS", repos = "https://cran.r-project.org", quiet = TRUE), silent = TRUE)
+          }
+          validate(need(requireNamespace("readODS", quietly = TRUE), "Package 'readODS' is required to read .ods files."))
+          # Read ODS; sheet can be name or index
+          readODS::read_ods(
+            path = input$file$datapath,
+            sheet = sheet_to_read
+          )
+        } else {
+          openxlsx::read.xlsx(
+            xlsxFile = input$file$datapath,
+            sheet = sheet_to_read,
+            detectDates = TRUE
+          )
+        }
       }, error = function(e) {
         validate(need(FALSE, paste("Failed to read sheet:", conditionMessage(e))))
         NULL
