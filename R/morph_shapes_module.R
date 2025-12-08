@@ -70,11 +70,9 @@ morph_shapes_ui <- function(id) {
           
           radioButtons(
             ns("mirror_parts"),
-            "Mirror which parts?",
-            choices = c("None" = "none",
-                       "First part (left/top)" = "first",
-                       "Second part (right/bottom)" = "second",
-                       "Both parts" = "both"),
+            "Mirror which part?",
+            choices = c("First part (left/top)" = "first",
+                       "Second part (right/bottom)" = "second"),
             selected = "second"
           ),
           
@@ -92,15 +90,6 @@ morph_shapes_ui <- function(id) {
                 min = 1,
                 max = 20,
                 step = 1
-              ),
-              
-              numericInput(
-                ns("blur_sigma"),
-                "Blur sigma (smoothing)",
-                value = 0,
-                min = 0,
-                max = 5,
-                step = 0.1
               )
             ),
             
@@ -113,15 +102,6 @@ morph_shapes_ui <- function(id) {
                 min = 0,
                 max = 1,
                 step = 0.05
-              ),
-              
-              numericInput(
-                ns("gamma"),
-                "Gamma correction",
-                value = 1.0,
-                min = 0.1,
-                max = 3.0,
-                step = 0.1
               )
             )
           ),
@@ -557,12 +537,12 @@ morph_shapes_server <- function(id) {
               ),
               output_options = list(
                 format = "jpg",
-                naming_pattern = "morph_{step}",
-                save_intermediates = FALSE
-              ),
-              validation_options = list(
-                check_dimensions = TRUE,
-                validate_binary = TRUE,
+              processing_options = list(
+                threshold = input$threshold,
+                gamma = 1.0,
+                blur_sigma = 0,
+                auto_align = FALSE
+              ),validate_binary = TRUE,
                 similarity_threshold = 0
               ),
               export_options = list(),
@@ -666,9 +646,7 @@ morph_shapes_server <- function(id) {
         "  Steps: ", summary$n_steps_per_pair, "\n",
         "  Output format: JPG\n\n",
         "Processing Options:\n",
-        "  Threshold: ", summary$processing_options$threshold, "\n",
-        "  Gamma: ", summary$processing_options$gamma, "\n",
-        "  Blur sigma: ", summary$processing_options$blur_sigma
+        "  Threshold: ", summary$processing_options$threshold
       )
     })
     
