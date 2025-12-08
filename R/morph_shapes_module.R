@@ -71,7 +71,8 @@ morph_shapes_ui <- function(id) {
           radioButtons(
             ns("mirror_parts"),
             "Mirror which part?",
-            choices = c("First part (left/top)" = "first",
+            choices = c("None" = "none",
+                       "First part (left/top)" = "first",
                        "Second part (right/bottom)" = "second"),
             selected = "second"
           ),
@@ -422,7 +423,7 @@ morph_shapes_server <- function(id) {
             split_options = list(
               direction = input$split_direction,
               split_position = input$split_position,
-              mirror_parts = "none"
+              mirror_parts = input$mirror_parts
             ),
             naming_options = list(
               suffix_first = if (input$split_direction == "vertical") "_left" else "_top",
