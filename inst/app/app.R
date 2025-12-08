@@ -13,15 +13,17 @@ ui <- dashboardPage(
     sidebarMenu(
       id = "tabs",
       menuItem("1. Image Processing", tabName = "image_processing", icon = icon("images")),
-      menuItem("2. Shape Analysis",   tabName = "shape_analysis",   icon = icon("project-diagram")),
-      menuItem("3. Data Import",      tabName = "data_import",      icon = icon("table")),
-      menuItem("4. Plotting",         tabName = "plotting",         icon = icon("chart-line")),
-      menuItem("5. Overview",         tabName = "overview",         icon = icon("th-large"))
+      menuItem("2. Morph Shapes",     tabName = "morph_shapes",     icon = icon("wand-magic-sparkles")),
+      menuItem("3. Shape Analysis",   tabName = "shape_analysis",   icon = icon("project-diagram")),
+      menuItem("4. Data Import",      tabName = "data_import",      icon = icon("table")),
+      menuItem("5. Plotting",         tabName = "plotting",         icon = icon("chart-line")),
+      menuItem("6. Overview",         tabName = "overview",         icon = icon("th-large"))
     )
   ),
   dashboardBody(
     tabItems(
   tabItem(tabName = "image_processing", HaugShapeV2::image_processing_ui("img")),
+  tabItem(tabName = "morph_shapes",     HaugShapeV2::morph_shapes_ui("ms")),
   tabItem(tabName = "shape_analysis",   HaugShapeV2::shape_analysis_ui("sa")),
   tabItem(tabName = "data_import",      HaugShapeV2::data_import_ui("di")),
   tabItem(tabName = "plotting",         HaugShapeV2::plotting_ui("pl")),
@@ -33,6 +35,7 @@ ui <- dashboardPage(
 server <- function(input, output, session) {
   # Initialize modules
   HaugShapeV2::image_processing_server("img")
+  HaugShapeV2::morph_shapes_server("ms")
   HaugShapeV2::shape_analysis_server("sa")
 
   # Data Import provides data for plotting
