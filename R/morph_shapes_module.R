@@ -422,7 +422,7 @@ morph_shapes_server <- function(id) {
             split_options = list(
               direction = input$split_direction,
               split_position = input$split_position,
-              mirror_parts = input$mirror_parts
+              mirror_parts = "none"
             ),
             naming_options = list(
               suffix_first = if (input$split_direction == "vertical") "_left" else "_top",
@@ -521,8 +521,8 @@ morph_shapes_server <- function(id) {
               ),
               processing_options = list(
                 threshold = input$threshold,
-                gamma = input$gamma,
-                blur_sigma = input$blur_sigma,
+                gamma = 1.0,
+                blur_sigma = 0,
                 auto_align = FALSE
               ),
               distance_options = list(
@@ -638,8 +638,7 @@ morph_shapes_server <- function(id) {
         "==================\n\n",
         "Split Configuration:\n",
         "  Direction: ", input$split_direction, "\n",
-        "  Position: ", input$split_position, "\n",
-        "  Mirroring: ", input$mirror_parts, "\n\n",
+        "  Position: ", input$split_position, "\n\n",
         "Morphing Summary:\n",
         "  Total morphed images: ", summary$total_morphed_images, "\n",
         "  Morphing method: Distance Transform\n",
