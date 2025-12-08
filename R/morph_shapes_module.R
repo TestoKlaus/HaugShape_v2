@@ -15,6 +15,18 @@ morph_shapes_ui <- function(id) {
   tagList(
     fluidRow(
       column(
+        width = 12,
+        box(
+          title = icon("info-circle"),
+          status = "info",
+          solidHeader = FALSE,
+          width = 12,
+          p(strong("Tip:"), "For best results, use images with at least 30 pixels of padding around the shapes.")
+        )
+      )
+    ),
+    fluidRow(
+      column(
         width = 6,
         box(
           title = "1. Upload Image",
