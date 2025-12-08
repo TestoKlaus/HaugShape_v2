@@ -462,6 +462,17 @@ morph_shapes_server <- function(id) {
           # Store split results and paths
           rv$split_result <- split_result
           
+          # Debug: Print split result structure
+          cat("\n=== SPLIT DEBUG INFO ===\n")
+          cat("Processed files rows:", nrow(split_result$processed_files), "\n")
+          cat("Processed files columns:", ncol(split_result$processed_files), "\n")
+          if (nrow(split_result$processed_files) > 0) {
+            cat("Processed files content:\n")
+            print(split_result$processed_files)
+          }
+          cat("Split info length:", length(split_result$split_info), "\n")
+          cat("========================\n\n")
+          
           # Check if split was successful
           if (is.null(split_result$processed_files) || nrow(split_result$processed_files) < 2) {
             stop("Split operation did not produce 2 images. Check split_result: ", 
