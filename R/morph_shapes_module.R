@@ -24,8 +24,8 @@ morph_shapes_ui <- function(id) {
           
           fileInput(
             ns("upload_image"),
-            "Choose a JPG image file",
-            accept = c("image/jpeg", "image/jpg"),
+            "Choose a PNG image file",
+            accept = c("image/png"),
             multiple = FALSE
           ),
           
@@ -428,7 +428,7 @@ morph_shapes_server <- function(id) {
             processing_options = list(
               overwrite = TRUE,
               quality = 95,
-              format = "jpg",
+              format = "png",
               preserve_metadata = TRUE
             ),
             verbose = TRUE  # Enable verbose for debugging
@@ -504,7 +504,7 @@ morph_shapes_server <- function(id) {
                 edge_enhancement = FALSE
               ),
               output_options = list(
-                format = "jpg",
+                format = "png",
                 naming_pattern = "morph_{step}",
                 save_intermediates = FALSE
               ),
@@ -612,7 +612,7 @@ morph_shapes_server <- function(id) {
         "  Total morphed images: ", summary$total_morphed_images, "\n",
         "  Morphing method: Distance Transform\n",
         "  Steps: ", summary$n_steps_per_pair, "\n",
-        "  Output format: JPG\n\n",
+        "  Output format: PNG\n\n",
         "Processing Options:\n",
         "  Threshold: ", summary$processing_options$threshold, "\n",
         "  Gamma: ", summary$processing_options$gamma, "\n",
