@@ -338,9 +338,13 @@ morph_shapes_server <- function(id) {
     })
     outputOptions(output, "image_uploaded", suspendWhenHidden = FALSE)
     
-    # Preview uploaded image
+    # Preview uploaded image with split line
     output$preview_plot <- renderPlot({
       req(rv$uploaded_image)
+      
+      # Make reactive to split_position and split_direction
+      split_pos <- input$split_position
+      split_dir <- input$split_direction
       
       tryCatch({
         # Get image info
@@ -351,27 +355,26 @@ morph_shapes_server <- function(id) {
         # Convert to raster for plotting
         img_raster <- as.raster(rv$uploaded_image)
         
-        # Plot image
+        # Set up plot with proper dimensions
         par(mar = c(0, 0, 0, 0))
-        plot(img_raster)
+        plot(0:1, 0:1, type = "n", axes = FALSE, xlab = "", ylab = "", asp = img_height/img_width)
+        rasterImage(img_raster, 0, 0, 1, 1)
         
         # Draw split line
-        split_pos <- input$split_position
         if (!is.null(split_pos) && !is.na(split_pos)) {
-          if (input$split_direction == "vertical") {
-            # Vertical line
-            abline(v = split_pos, col = "red", lwd = 3, lty = 1)
+          if (split_dir == "vertical") {
+            # Vertical line at split position
+            abline(v = split_pos, col = "red", lwd = 3)
           } else {
-            # Horizontal line (note: coordinates are inverted in plot)
-            abline(h = 1 - split_pos, col = "red", lwd = 3, lty = 1)
+            # Horizontal line at split position (from bottom)
+            abline(h = split_pos, col = "red", lwd = 3)
           }
         }
       }, error = function(e) {
         plot(1, 1, type = "n", axes = FALSE, xlab = "", ylab = "")
         text(1, 1, paste("Error displaying image:", e$message))
       })
-    })
-    
+    })    
     # Display image info
     output$image_info <- renderText({
       req(rv$uploaded_image)
