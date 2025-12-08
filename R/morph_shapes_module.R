@@ -63,14 +63,13 @@ morph_shapes_ui <- function(id) {
           solidHeader = TRUE,
           width = 12,
           
-          selectInput(
+          sliderInput(
             ns("rotate_image"),
-            "Rotate Image Before Splitting",
-            choices = c("No rotation" = "0",
-                       "90° clockwise" = "90",
-                       "180°" = "180",
-                       "270° clockwise (90° counter-clockwise)" = "270"),
-            selected = "0"
+            "Rotate Image Before Splitting (degrees clockwise)",
+            min = 0,
+            max = 360,
+            value = 0,
+            step = 0.5
           ),
           
           selectInput(
