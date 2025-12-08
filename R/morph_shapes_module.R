@@ -343,7 +343,29 @@ morph_shapes_server <- function(id) {
       req(rv$uploaded_image)
       
       tryCatch({
-        plot(rv$uploaded_image)
+        # Get image info
+        img_info <- magick::image_info(rv$uploaded_image)
+        img_width <- img_info$width
+        img_height <- img_info$height
+        
+        # Convert to raster for plotting
+        img_raster <- as.raster(rv$uploaded_image)
+        
+        # Plot image
+        par(mar = c(0, 0, 0, 0))
+        plot(img_raster)
+        
+        # Draw split line
+        split_pos <- input$split_position
+        if (!is.null(split_pos) && !is.na(split_pos)) {
+          if (input$split_direction == "vertical") {
+            # Vertical line
+            abline(v = split_pos, col = "red", lwd = 3, lty = 1)
+          } else {
+            # Horizontal line (note: coordinates are inverted in plot)
+            abline(h = 1 - split_pos, col = "red", lwd = 3, lty = 1)
+          }
+        }
       }, error = function(e) {
         plot(1, 1, type = "n", axes = FALSE, xlab = "", ylab = "")
         text(1, 1, paste("Error displaying image:", e$message))
