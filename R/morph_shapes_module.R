@@ -80,19 +80,90 @@ morph_shapes_ui <- function(id) {
           
           hr(),
           
+          h4("Morphing Settings"),
+          
+          fluidRow(
+            column(
+              width = 6,
+              selectInput(
+                ns("morph_method"),
+                "Morphing Method",
+                choices = c("Distance Transform" = "distance_transform",
+                           "Linear" = "linear",
+                           "Spline" = "spline"),
+                selected = "distance_transform"
+              ),
+              
+              numericInput(
+                ns("n_steps"),
+                "Number of morphing steps",
+                value = 5,
+                min = 1,
+                max = 20,
+                step = 1
+              )
+            ),
+            
+            column(
+              width = 6,
+              numericInput(
+                ns("threshold"),
+                "Binary threshold (0-1)",
+                value = 0.1,
+                min = 0,
+                max = 1,
+                step = 0.05
+              ),
+              
+              numericInput(
+                ns("gamma"),
+                "Gamma correction",
+                value = 1.0,
+                min = 0.1,
+                max = 3.0,
+                step = 0.1
+              )
+            )
+          ),
+          
+          fluidRow(
+            column(
+              width = 6,
+              numericInput(
+                ns("blur_sigma"),
+                "Blur sigma (smoothing)",
+                value = 0,
+                min = 0,
+                max = 5,
+                step = 0.1
+              )
+            ),
+            
+            column(
+              width = 6,
+              checkboxInput(
+                ns("auto_align"),
+                "Auto-align shapes",
+                value = TRUE
+              )
+            )
+          ),
+          
+          hr(),
+          
           uiOutput(ns("output_dir_ui")),
           
           textInput(
             ns("output_folder_name"),
-            "Subfolder name for split images",
-            value = format(Sys.time(), "split_%Y%m%d_%H%M%S")
+            "Output subfolder name",
+            value = format(Sys.time(), "morphed_%Y%m%d_%H%M%S")
           ),
           
           actionButton(
-            ns("btn_split"),
-            "Split Image",
-            icon = icon("cut"),
-            class = "btn-warning",
+            ns("btn_process"),
+            "Split & Morph Image",
+            icon = icon("wand-magic-sparkles"),
+            class = "btn-success",
             style = "width: 100%;"
           )
         )
@@ -103,13 +174,19 @@ morph_shapes_ui <- function(id) {
       column(
         width = 12,
         conditionalPanel(
-          condition = sprintf("output['%s']", ns("split_completed")),
+          condition = sprintf("output['%s']", ns("processing_completed")),
           box(
-            title = "3. Split Results",
+            title = "Processing Results",
             status = "success",
             solidHeader = TRUE,
             width = 12,
             collapsible = TRUE,
+            
+            verbatimTextOutput(ns("process_summary")),
+            
+            hr(),
+            
+            h4("Split Images Preview"),
             
             fluidRow(
               column(
@@ -118,8 +195,7 @@ morph_shapes_ui <- function(id) {
                   title = "First Half",
                   width = 12,
                   status = "info",
-                  plotOutput(ns("split_preview_first"), height = "300px"),
-                  verbatimTextOutput(ns("split_path_first"))
+                  plotOutput(ns("split_preview_first"), height = "300px")
                 )
               ),
               column(
@@ -128,128 +204,14 @@ morph_shapes_ui <- function(id) {
                   title = "Second Half",
                   width = 12,
                   status = "info",
-                  plotOutput(ns("split_preview_second"), height = "300px"),
-                  verbatimTextOutput(ns("split_path_second"))
-                )
-              )
-            )
-          )
-        )
-      )
-    ),
-    
-    fluidRow(
-      column(
-        width = 12,
-        conditionalPanel(
-          condition = sprintf("output['%s']", ns("split_completed")),
-          box(
-            title = "4. Morphing Configuration",
-            status = "info",
-            solidHeader = TRUE,
-            width = 12,
-            collapsible = TRUE,
-            
-            fluidRow(
-              column(
-                width = 4,
-                selectInput(
-                  ns("morph_method"),
-                  "Morphing Method",
-                  choices = c("Distance Transform" = "distance_transform",
-                             "Linear" = "linear",
-                             "Spline" = "spline"),
-                  selected = "distance_transform"
-                ),
-                
-                numericInput(
-                  ns("n_steps"),
-                  "Number of morphing steps",
-                  value = 5,
-                  min = 1,
-                  max = 20,
-                  step = 1
-                )
-              ),
-              
-              column(
-                width = 4,
-                numericInput(
-                  ns("threshold"),
-                  "Binary threshold (0-1)",
-                  value = 0.1,
-                  min = 0,
-                  max = 1,
-                  step = 0.05
-                ),
-                
-                numericInput(
-                  ns("gamma"),
-                  "Gamma correction",
-                  value = 1.0,
-                  min = 0.1,
-                  max = 3.0,
-                  step = 0.1
-                )
-              ),
-              
-              column(
-                width = 4,
-                numericInput(
-                  ns("blur_sigma"),
-                  "Blur sigma (smoothing)",
-                  value = 0,
-                  min = 0,
-                  max = 5,
-                  step = 0.1
-                ),
-                
-                checkboxInput(
-                  ns("auto_align"),
-                  "Auto-align shapes",
-                  value = TRUE
+                  plotOutput(ns("split_preview_second"), height = "300px")
                 )
               )
             ),
             
-            fluidRow(
-              column(
-                width = 12,
-                textInput(
-                  ns("morph_subfolder"),
-                  "Subfolder name for morphed images",
-                  value = format(Sys.time(), "morphed_%Y%m%d_%H%M%S")
-                ),
-                
-                actionButton(
-                  ns("btn_morph"),
-                  "Generate Morphed Shapes",
-                  icon = icon("wand-magic-sparkles"),
-                  class = "btn-success",
-                  style = "width: 100%;"
-                )
-              )
-            )
-          )
-        )
-      )
-    ),
-    
-    fluidRow(
-      column(
-        width = 12,
-        conditionalPanel(
-          condition = sprintf("output['%s']", ns("morph_completed")),
-          box(
-            title = "5. Morphing Results",
-            status = "success",
-            solidHeader = TRUE,
-            width = 12,
-            collapsible = TRUE,
-            
-            verbatimTextOutput(ns("morph_summary")),
-            
             hr(),
+            
+            h4("Morphed Results"),
             
             sliderInput(
               ns("morph_preview_step"),
@@ -424,14 +386,23 @@ morph_shapes_server <- function(id) {
       )
     })
     
-    # Split image
-    observeEvent(input$btn_split, {
+    # Process: Split and Morph
+    observeEvent(input$btn_process, {
       req(rv$uploaded_image)
       
       if (!rv$magick_ready) {
         showNotification(
           "Package 'magick' is required. Please install it.",
           type = "error"
+        )
+        return()
+      }
+      
+      if (!rv$imager_ready) {
+        showNotification(
+          "Package 'imager' is required for morphing. Please install it: install.packages('imager')",
+          type = "error",
+          duration = 10
         )
         return()
       }
@@ -447,21 +418,25 @@ morph_shapes_server <- function(id) {
         output_dir <- file.path(getwd(), "morph_output")
       }
       
-      # Create split subfolder
-      split_dir <- file.path(output_dir, input$output_folder_name)
+      # Create output subfolder
+      final_output_dir <- file.path(output_dir, input$output_folder_name)
       
-      withProgress(message = "Splitting image...", value = 0, {
+      withProgress(message = "Processing...", value = 0, {
         tryCatch({
           # Prepare temporary file for the uploaded image
           temp_input <- tempfile(fileext = paste0(".", tools::file_ext(input$upload_image$name)))
           magick::image_write(rv$uploaded_image, temp_input)
           
-          incProgress(0.3, detail = "Processing split...")
+          incProgress(0.1, detail = "Splitting image...")
+          
+          # Create temporary directory for split images
+          temp_split_dir <- tempfile(pattern = "split_")
+          dir.create(temp_split_dir, recursive = TRUE)
           
           # Call split_image function
-          result <- split_image(
+          split_result <- split_image(
             input_paths = temp_input,
-            output_dir = split_dir,
+            output_dir = temp_split_dir,
             split_options = list(
               direction = input$split_direction,
               split_position = input$split_position,
@@ -476,37 +451,88 @@ morph_shapes_server <- function(id) {
             processing_options = list(
               overwrite = TRUE,
               quality = 95,
-              format = "auto",
+              format = "png",
               preserve_metadata = TRUE
             ),
             verbose = FALSE
           )
           
-          incProgress(0.4, detail = "Loading split results...")
+          incProgress(0.2, detail = "Split complete. Starting morphing...")
           
-          # Store results
-          rv$split_result <- result
+          # Store split results and paths
+          rv$split_result <- split_result
           
-          # Load split images for preview
-          if (nrow(result$processed_files) >= 2) {
-            rv$split_paths$first <- result$processed_files$output_path[1]
-            rv$split_paths$second <- result$processed_files$output_path[2]
+          # Get split image paths
+          if (nrow(split_result$processed_files) >= 2) {
+            rv$split_paths$first <- split_result$processed_files$output_path[1]
+            rv$split_paths$second <- split_result$processed_files$output_path[2]
+            
+            # Call morph_shapes function
+            morph_result <- morph_shapes(
+              input_paths = c(rv$split_paths$first, rv$split_paths$second),
+              output_dir = final_output_dir,
+              morphing_options = list(
+                method = input$morph_method,
+                n_steps = input$n_steps,
+                morph_type = "pair",
+                interpolation = "linear"
+              ),
+              processing_options = list(
+                threshold = input$threshold,
+                gamma = input$gamma,
+                blur_sigma = input$blur_sigma,
+                auto_align = input$auto_align
+              ),
+              distance_options = list(
+                distance_metric = "euclidean",
+                normalize_distances = TRUE,
+                invert_distances = FALSE
+              ),
+              blending_options = list(
+                blend_mode = "average",
+                weights = NULL,
+                edge_enhancement = FALSE
+              ),
+              output_options = list(
+                format = "png",
+                naming_pattern = "morph_{step}",
+                save_intermediates = FALSE
+              ),
+              validation_options = list(
+                check_dimensions = TRUE,
+                validate_binary = TRUE,
+                similarity_threshold = 0
+              ),
+              export_options = list(),
+              verbose = FALSE
+            )
+            
+            incProgress(0.5, detail = "Morphing complete!")
+            
+            # Store morph results
+            rv$morph_result <- morph_result
+            
+            incProgress(0.2, detail = "Finalizing...")
+            
+            showNotification(
+              paste0("Processing complete! ", 
+                    length(morph_result$morphed_images), 
+                    " morphed images created in: ", 
+                    final_output_dir),
+              type = "message",
+              duration = 5
+            )
+          } else {
+            stop("Failed to create split images")
           }
           
-          incProgress(0.3, detail = "Complete!")
-          
-          showNotification(
-            paste("Image split successfully! Files saved to:", split_dir),
-            type = "message",
-            duration = 5
-          )
-          
-          # Clean up temp file
+          # Clean up temp files
           unlink(temp_input)
+          unlink(temp_split_dir, recursive = TRUE)
           
         }, error = function(e) {
           showNotification(
-            paste("Error splitting image:", e$message),
+            paste("Error processing image:", e$message),
             type = "error",
             duration = 10
           )
@@ -514,11 +540,11 @@ morph_shapes_server <- function(id) {
       })
     })
     
-    # Split completed flag
-    output$split_completed <- reactive({
-      !is.null(rv$split_result) && !is.null(rv$split_paths$first)
+    # Processing completed flag
+    output$processing_completed <- reactive({
+      !is.null(rv$split_result) && !is.null(rv$morph_result)
     })
-    outputOptions(output, "split_completed", suspendWhenHidden = FALSE)
+    outputOptions(output, "processing_completed", suspendWhenHidden = FALSE)
     
     # Preview split results
     output$split_preview_first <- renderPlot({
@@ -547,14 +573,29 @@ morph_shapes_server <- function(id) {
       })
     })
     
-    output$split_path_first <- renderText({
-      req(rv$split_paths$first)
-      paste("Saved to:\n", rv$split_paths$first)
-    })
-    
-    output$split_path_second <- renderText({
-      req(rv$split_paths$second)
-      paste("Saved to:\n", rv$split_paths$second)
+    # Display processing summary
+    output$process_summary <- renderText({
+      req(rv$split_result, rv$morph_result)
+      
+      summary <- rv$morph_result$processing_summary
+      paste0(
+        "Processing Summary\n",
+        "==================\n\n",
+        "Split Configuration:\n",
+        "  Direction: ", input$split_direction, "\n",
+        "  Position: ", input$split_position, "\n",
+        "  Mirroring: ", input$mirror_parts, "\n\n",
+        "Morphing Summary:\n",
+        "  Total morphed images: ", summary$total_morphed_images, "\n",
+        "  Morphing method: ", summary$morphing_method, "\n",
+        "  Steps: ", summary$n_steps_per_pair, "\n",
+        "  Output format: ", summary$output_format, "\n",
+        "  Alignment applied: ", summary$alignment_applied, "\n\n",
+        "Processing Options:\n",
+        "  Threshold: ", summary$processing_options$threshold, "\n",
+        "  Gamma: ", summary$processing_options$gamma, "\n",
+        "  Blur sigma: ", summary$processing_options$blur_sigma
+      )
     })
     
     # Update morph step slider when morphing completes
@@ -566,129 +607,6 @@ morph_shapes_server <- function(id) {
         session,
         "morph_preview_step",
         max = input$n_steps
-      )
-    })
-    
-    # Morph shapes
-    observeEvent(input$btn_morph, {
-      req(rv$split_paths$first, rv$split_paths$second)
-      req(file.exists(rv$split_paths$first))
-      req(file.exists(rv$split_paths$second))
-      
-      if (!rv$imager_ready) {
-        showNotification(
-          "Package 'imager' is required for morphing. Please install it: install.packages('imager')",
-          type = "error",
-          duration = 10
-        )
-        return()
-      }
-      
-      # Get output directory
-      output_dir <- if (rv$shinyfiles_ready) {
-        selected_output_dir()
-      } else {
-        input$output_dir_fallback
-      }
-      
-      if (is.null(output_dir) || !nzchar(output_dir)) {
-        output_dir <- file.path(getwd(), "morph_output")
-      }
-      
-      # Create morph subfolder
-      morph_dir <- file.path(output_dir, input$morph_subfolder)
-      
-      withProgress(message = "Morphing shapes...", value = 0, {
-        tryCatch({
-          incProgress(0.2, detail = "Preparing morphing...")
-          
-          # Call morph_shapes function
-          result <- morph_shapes(
-            input_paths = c(rv$split_paths$first, rv$split_paths$second),
-            output_dir = morph_dir,
-            morphing_options = list(
-              method = input$morph_method,
-              n_steps = input$n_steps,
-              morph_type = "pair",
-              interpolation = "linear"
-            ),
-            processing_options = list(
-              threshold = input$threshold,
-              gamma = input$gamma,
-              blur_sigma = input$blur_sigma,
-              auto_align = input$auto_align
-            ),
-            distance_options = list(
-              distance_metric = "euclidean",
-              normalize_distances = TRUE,
-              invert_distances = FALSE
-            ),
-            blending_options = list(
-              blend_mode = "average",
-              weights = NULL,
-              edge_enhancement = FALSE
-            ),
-            output_options = list(
-              format = "png",
-              naming_pattern = "morph_{step}",
-              save_intermediates = FALSE
-            ),
-            validation_options = list(
-              check_dimensions = TRUE,
-              validate_binary = TRUE,
-              similarity_threshold = 0
-            ),
-            export_options = list(),
-            verbose = FALSE
-          )
-          
-          incProgress(0.6, detail = "Loading results...")
-          
-          # Store results
-          rv$morph_result <- result
-          
-          incProgress(0.2, detail = "Complete!")
-          
-          showNotification(
-            paste("Morphing completed!", length(result$morphed_images), "images created in:", morph_dir),
-            type = "message",
-            duration = 5
-          )
-          
-        }, error = function(e) {
-          showNotification(
-            paste("Error morphing shapes:", e$message),
-            type = "error",
-            duration = 10
-          )
-        })
-      })
-    })
-    
-    # Morph completed flag
-    output$morph_completed <- reactive({
-      !is.null(rv$morph_result)
-    })
-    outputOptions(output, "morph_completed", suspendWhenHidden = FALSE)
-    
-    # Display morph summary
-    output$morph_summary <- renderText({
-      req(rv$morph_result)
-      
-      summary <- rv$morph_result$processing_summary
-      paste0(
-        "Morphing Summary\n",
-        "================\n",
-        "Total morphed images: ", summary$total_morphed_images, "\n",
-        "Morphing method: ", summary$morphing_method, "\n",
-        "Morph type: ", summary$morph_type, "\n",
-        "Steps per pair: ", summary$n_steps_per_pair, "\n",
-        "Output format: ", summary$output_format, "\n",
-        "Alignment applied: ", summary$alignment_applied, "\n",
-        "\nProcessing Options:\n",
-        "  Threshold: ", summary$processing_options$threshold, "\n",
-        "  Gamma: ", summary$processing_options$gamma, "\n",
-        "  Blur sigma: ", summary$processing_options$blur_sigma
       )
     })
     
