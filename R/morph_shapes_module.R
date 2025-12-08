@@ -466,6 +466,10 @@ morph_shapes_server <- function(id) {
           rv$split_paths$first <- success_files$output_path[1]
           rv$split_paths$second <- success_files$output_path[2]
           
+          # Normalize paths for Windows
+          rv$split_paths$first <- normalizePath(rv$split_paths$first, winslash = "\\", mustWork = FALSE)
+          rv$split_paths$second <- normalizePath(rv$split_paths$second, winslash = "\\", mustWork = FALSE)
+          
           # Verify files exist
           if (!file.exists(rv$split_paths$first)) {
             stop("First split image not found at: ", rv$split_paths$first)
