@@ -454,7 +454,7 @@ morph_shapes_server <- function(id) {
               format = "png",
               preserve_metadata = TRUE
             ),
-            verbose = FALSE
+            verbose = TRUE  # Enable verbose for debugging
           )
           
           incProgress(0.2, detail = "Split complete. Starting morphing...")
@@ -462,10 +462,32 @@ morph_shapes_server <- function(id) {
           # Store split results and paths
           rv$split_result <- split_result
           
+          # Check if split was successful
+          if (is.null(split_result$processed_files) || nrow(split_result$processed_files) < 2) {
+            stop("Split operation did not produce 2 images. Check split_result: ", 
+                 nrow(split_result$processed_files), " files created")
+          }
+          
+          # Check for successful status
+          success_files <- split_result$processed_files[split_result$processed_files$status == "success", ]
+          if (nrow(success_files) < 2) {
+            stop("Split images were not successfully created. Status check failed.")
+          }
+          
           # Get split image paths
-          if (nrow(split_result$processed_files) >= 2) {
-            rv$split_paths$first <- split_result$processed_files$output_path[1]
-            rv$split_paths$second <- split_result$processed_files$output_path[2]
+          rv$split_paths$first <- success_files$output_path[1]
+          rv$split_paths$second <- success_files$output_path[2]
+          
+          # Verify files exist
+          if (!file.exists(rv$split_paths$first)) {
+            stop("First split image not found at: ", rv$split_paths$first)
+          }
+          if (!file.exists(rv$split_paths$second)) {
+            stop("Second split image not found at: ", rv$split_paths$second)
+          }
+          
+          # Now proceed with morphing
+          if (TRUE) {
             
             # Call morph_shapes function
             morph_result <- morph_shapes(
@@ -522,20 +544,33 @@ morph_shapes_server <- function(id) {
               type = "message",
               duration = 5
             )
-          } else {
-            stop("Failed to create split images")
           }
           
-          # Clean up temp files
+          # Clean up temp files (but keep split files temporarily for preview)
           unlink(temp_input)
-          unlink(temp_split_dir, recursive = TRUE)
+          # Don't delete split_dir yet - we need it for preview
           
         }, error = function(e) {
+          # More detailed error message
+          error_msg <- paste("Error processing image:", e$message)
+          
+          # Add debug info if available
+          if (!is.null(rv$split_result)) {
+            error_msg <- paste0(error_msg, 
+                              "\n\nDebug Info:",
+                              "\nSplit files created: ", nrow(rv$split_result$processed_files),
+                              "\nSplit directory: ", temp_split_dir)
+          }
+          
           showNotification(
-            paste("Error processing image:", e$message),
+            error_msg,
             type = "error",
-            duration = 10
+            duration = 15
           )
+          
+          # Clean up on error
+          if (exists("temp_input")) unlink(temp_input)
+          if (exists("temp_split_dir")) unlink(temp_split_dir, recursive = TRUE)
         })
       })
     })
