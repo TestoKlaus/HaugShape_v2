@@ -593,16 +593,16 @@ split_image <- function(input_paths,
 #' @noRd
 .save_split_image <- function(img, output_path, format, processing_options) {
   
-  # Set quality for JPEG
+  # Convert format if needed
   if (tolower(format) %in% c("jpg", "jpeg")) {
     img <- magick::image_convert(img, format = "jpeg")
-    img <- magick::image_quality(img, quality = processing_options$quality)
+    # Write image with quality setting for JPEG
+    magick::image_write(img, path = output_path, quality = processing_options$quality)
   } else {
     img <- magick::image_convert(img, format = format)
+    # Write image
+    magick::image_write(img, path = output_path)
   }
-  
-  # Write image
-  magick::image_write(img, path = output_path)
 }
 
 # Summary Generation ----
