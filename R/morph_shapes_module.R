@@ -478,26 +478,26 @@ morph_shapes_server <- function(id) {
             stop("Second split image not found at: ", rv$split_paths$second)
           }
           
-          # Convert images to grayscale using magick before morphing
-          # This ensures compatibility with imager's morphing functions
-          incProgress(0.05, detail = "Converting to grayscale...")
+          # Convert images to RGB using magick before morphing
+          # This ensures compatibility with imager's morphing functions (needs 3 color channels)
+          incProgress(0.05, detail = "Converting to RGB...")
           
           img1 <- magick::image_read(rv$split_paths$first)
           img2 <- magick::image_read(rv$split_paths$second)
           
-          # Convert to grayscale
-          img1 <- magick::image_convert(img1, colorspace = "gray")
-          img2 <- magick::image_convert(img2, colorspace = "gray")
+          # Convert to RGB (3 channels) - required by imager
+          img1 <- magick::image_convert(img1, colorspace = "sRGB", type = "TrueColor")
+          img2 <- magick::image_convert(img2, colorspace = "sRGB", type = "TrueColor")
           
           # Save back to temp files
-          temp_gray1 <- tempfile(fileext = ".png")
-          temp_gray2 <- tempfile(fileext = ".png")
-          magick::image_write(img1, temp_gray1)
-          magick::image_write(img2, temp_gray2)
+          temp_rgb1 <- tempfile(fileext = ".png")
+          temp_rgb2 <- tempfile(fileext = ".png")
+          magick::image_write(img1, temp_rgb1)
+          magick::image_write(img2, temp_rgb2)
           
-          # Update paths to use grayscale versions
-          rv$split_paths$first <- temp_gray1
-          rv$split_paths$second <- temp_gray2
+          # Update paths to use RGB versions
+          rv$split_paths$first <- temp_rgb1
+          rv$split_paths$second <- temp_rgb2
           
           incProgress(0.05, detail = "Starting morphing...")
           
