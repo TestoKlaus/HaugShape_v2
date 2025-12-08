@@ -386,7 +386,7 @@ split_image <- function(input_paths,
   split_results <- .split_image_at_positions(img, params$split_options, original_width, original_height)
   
   # Apply mirroring
-  mirrored_results <- .apply_mirroring(split_results$parts, params$split_options$mirror_parts)
+  mirrored_results <- .apply_mirroring(split_results$parts, params$split_options$mirror_parts, params$split_options$direction)
   
   # Generate output filenames and save images
   output_paths <- character(length(mirrored_results))
@@ -498,7 +498,7 @@ split_image <- function(input_paths,
 
 #' Apply mirroring to image parts
 #' @noRd
-.apply_mirroring <- function(parts, mirror_parts) {
+.apply_mirroring <- function(parts, mirror_parts, split_direction = "vertical") {
   
   if (mirror_parts == "none") {
     return(parts)
@@ -518,11 +518,13 @@ split_image <- function(input_paths,
     }
     
     if (should_mirror) {
-      # Determine mirroring direction based on typical use case
       # For vertical splits, mirror horizontally (flop)
       # For horizontal splits, mirror vertically (flip)
-      # This is a heuristic and could be made configurable
-      mirrored_parts[[i]] <- magick::image_flop(parts[[i]])
+      if (split_direction == "vertical") {
+        mirrored_parts[[i]] <- magick::image_flop(parts[[i]])
+      } else {
+        mirrored_parts[[i]] <- magick::image_flip(parts[[i]])
+      }
     }
   }
   

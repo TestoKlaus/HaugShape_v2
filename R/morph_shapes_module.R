@@ -63,6 +63,15 @@ morph_shapes_ui <- function(id) {
           solidHeader = TRUE,
           width = 12,
           
+          sliderInput(
+            ns("rotate_image"),
+            "Rotate Image Before Splitting (degrees clockwise)",
+            min = 0,
+            max = 360,
+            value = 0,
+            step = 0.5
+          ),
+          
           selectInput(
             ns("split_direction"),
             "Split Direction",
@@ -335,18 +344,25 @@ morph_shapes_server <- function(id) {
     output$preview_plot <- renderPlot({
       req(rv$uploaded_image)
       
-      # Make reactive to split_position and split_direction
+      # Make reactive to rotation, split_position and split_direction
+      rotation <- as.numeric(input$rotate_image)
       split_pos <- input$split_position
       split_dir <- input$split_direction
       
       tryCatch({
+        # Apply rotation if needed
+        img_display <- rv$uploaded_image
+        if (!is.null(rotation) && rotation > 0) {
+          img_display <- magick::image_rotate(img_display, rotation)
+        }
+        
         # Get image info
-        img_info <- magick::image_info(rv$uploaded_image)
+        img_info <- magick::image_info(img_display)
         img_width <- img_info$width
         img_height <- img_info$height
         
         # Convert to raster for plotting
-        img_raster <- as.raster(rv$uploaded_image)
+        img_raster <- as.raster(img_display)
         
         # Set up plot with proper dimensions
         par(mar = c(0, 0, 0, 0))
@@ -420,7 +436,15 @@ morph_shapes_server <- function(id) {
         tryCatch({
           # Prepare temporary file for the uploaded image
           temp_input <- tempfile(fileext = paste0(".", tools::file_ext(input$upload_image$name)))
-          magick::image_write(rv$uploaded_image, temp_input)
+          
+          # Apply rotation if needed
+          img_to_process <- rv$uploaded_image
+          rotation <- as.numeric(input$rotate_image)
+          if (!is.null(rotation) && rotation > 0) {
+            img_to_process <- magick::image_rotate(img_to_process, rotation)
+          }
+          
+          magick::image_write(img_to_process, temp_input)
           
           incProgress(0.1, detail = "Splitting image...")
           
