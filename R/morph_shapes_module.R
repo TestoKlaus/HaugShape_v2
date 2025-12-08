@@ -24,8 +24,8 @@ morph_shapes_ui <- function(id) {
           
           fileInput(
             ns("upload_image"),
-            "Choose an image file",
-            accept = c("image/png", "image/jpeg", "image/jpg", "image/tiff", "image/bmp"),
+            "Choose a JPG image file",
+            accept = c("image/jpeg", "image/jpg"),
             multiple = FALSE
           ),
           
@@ -85,15 +85,6 @@ morph_shapes_ui <- function(id) {
           fluidRow(
             column(
               width = 6,
-              selectInput(
-                ns("morph_method"),
-                "Morphing Method",
-                choices = c("Distance Transform" = "distance_transform",
-                           "Linear" = "linear",
-                           "Spline" = "spline"),
-                selected = "distance_transform"
-              ),
-              
               numericInput(
                 ns("n_steps"),
                 "Number of morphing steps",
@@ -101,6 +92,15 @@ morph_shapes_ui <- function(id) {
                 min = 1,
                 max = 20,
                 step = 1
+              ),
+              
+              numericInput(
+                ns("blur_sigma"),
+                "Blur sigma (smoothing)",
+                value = 0,
+                min = 0,
+                max = 5,
+                step = 0.1
               )
             ),
             
@@ -122,29 +122,6 @@ morph_shapes_ui <- function(id) {
                 min = 0.1,
                 max = 3.0,
                 step = 0.1
-              )
-            )
-          ),
-          
-          fluidRow(
-            column(
-              width = 6,
-              numericInput(
-                ns("blur_sigma"),
-                "Blur sigma (smoothing)",
-                value = 0,
-                min = 0,
-                max = 5,
-                step = 0.1
-              )
-            ),
-            
-            column(
-              width = 6,
-              checkboxInput(
-                ns("auto_align"),
-                "Auto-align shapes",
-                value = TRUE
               )
             )
           ),
@@ -451,7 +428,7 @@ morph_shapes_server <- function(id) {
             processing_options = list(
               overwrite = TRUE,
               quality = 95,
-              format = "png",
+              format = "jpg",
               preserve_metadata = TRUE
             ),
             verbose = TRUE  # Enable verbose for debugging
@@ -505,7 +482,7 @@ morph_shapes_server <- function(id) {
               input_paths = c(rv$split_paths$first, rv$split_paths$second),
               output_dir = final_output_dir,
               morphing_options = list(
-                method = input$morph_method,
+                method = "distance_transform",
                 n_steps = input$n_steps,
                 morph_type = "pair",
                 interpolation = "linear"
@@ -514,7 +491,7 @@ morph_shapes_server <- function(id) {
                 threshold = input$threshold,
                 gamma = input$gamma,
                 blur_sigma = input$blur_sigma,
-                auto_align = input$auto_align
+                auto_align = FALSE
               ),
               distance_options = list(
                 distance_metric = "euclidean",
@@ -527,7 +504,7 @@ morph_shapes_server <- function(id) {
                 edge_enhancement = FALSE
               ),
               output_options = list(
-                format = "png",
+                format = "jpg",
                 naming_pattern = "morph_{step}",
                 save_intermediates = FALSE
               ),
@@ -633,10 +610,9 @@ morph_shapes_server <- function(id) {
         "  Mirroring: ", input$mirror_parts, "\n\n",
         "Morphing Summary:\n",
         "  Total morphed images: ", summary$total_morphed_images, "\n",
-        "  Morphing method: ", summary$morphing_method, "\n",
+        "  Morphing method: Distance Transform\n",
         "  Steps: ", summary$n_steps_per_pair, "\n",
-        "  Output format: ", summary$output_format, "\n",
-        "  Alignment applied: ", summary$alignment_applied, "\n\n",
+        "  Output format: JPG\n\n",
         "Processing Options:\n",
         "  Threshold: ", summary$processing_options$threshold, "\n",
         "  Gamma: ", summary$processing_options$gamma, "\n",
