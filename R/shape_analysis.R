@@ -730,12 +730,17 @@ load_reconstruction_model <- function(model_path, validate = TRUE, verbose = TRU
   if (validate) {
     if (verbose) message("Validating model structure...")
     
-    required_components <- c("rotation", "center", "sdev", "efa_coe", "parameters", "metadata")
+    required_components <- c("rotation", "center", "sdev", "parameters", "metadata")
     missing_components <- setdiff(required_components, names(model))
     
     if (length(missing_components) > 0) {
       stop("Reconstruction model is missing required components: ",
            paste(missing_components, collapse = ", "), call. = FALSE)
+    }
+    
+    # Check for either efa_object (new format) or efa_coe (old format)
+    if (is.null(model$efa_object) && is.null(model$efa_coe)) {
+      stop("Reconstruction model is missing EFA data (neither efa_object nor efa_coe found)", call. = FALSE)
     }
     
     # Check metadata version
