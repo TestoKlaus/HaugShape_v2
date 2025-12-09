@@ -198,8 +198,11 @@
 
 # options like ------
 
-.is_verbose <- function()
-  ifelse(options("Momocs_verbose")[[1]], TRUE, FALSE)
+.is_verbose <- function() {
+  verbose_opt <- options("Momocs_verbose")[[1]]
+  if (is.null(verbose_opt)) return(TRUE)  # Default to TRUE if not set
+  return(isTRUE(verbose_opt))
+}
 
 # options("verbose"=F)
 # .is_verbose()
