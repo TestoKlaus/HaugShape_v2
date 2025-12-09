@@ -4,7 +4,7 @@
 #' points or custom positions. Specialized for Momocs geometric morphometric analysis
 #' with extensive customization options for publication-ready figures.
 #'
-#' @param pca_result The PCA result object from Momocs::PCA().
+#' @param pca_result The PCA result object from PCA().
 #' @param coo_object The Coo object containing shape coordinate data.
 #' @param pca_options List containing PCA plotting options:
 #'   \describe{
@@ -215,7 +215,7 @@ shape_plot_momocs <- function(pca_result,
   
   # Check PCA result
   if (!inherits(pca_result, "PCA")) {
-    stop("'pca_result' must be a PCA object from Momocs::PCA()", call. = FALSE)
+    stop("'pca_result' must be a PCA object from PCA()", call. = FALSE)
   }
   
   # Check Coo object

@@ -54,7 +54,12 @@ The `styling` parameter accepts a list with the following options:
   \item{plot_style}{Style theme: "Haug", "inverted_Haug", "publication" (default: "Haug")}
   \item{point}{List with point styling (color, fill, shape, size)}
   \item{text}{List with text styling (title_size, label_size, tick_size)}
-  \item{axis}{List with axis styling (linewidth, tick_length, tick_margin)}
+  \item{axis}{List with axis styling (linewidth, tick_length, tick_margin, central_axes, aspect)}
+
+Aspect options:
+- "auto" (default): no fixed aspect unless shapes are drawn, then 1:1
+- "free": never fix aspect (let ggplot scale axes independently)
+- "1:1" or "2:1": lock aspect using coord_fixed (interpreted as width:height)
 }
 
 The `features` parameter accepts a list with the following options:
@@ -63,6 +68,21 @@ The `features` parameter accepts a list with the following options:
   \item{contours}{List with contour options (show, groups, colors, linewidth)}
   \item{shapes}{List with shape options (show, groups, size, shift, adjustments)}
 }
+
+The `export_options` parameter accepts a list with the following options:
+\describe{
+  \item{export}{Logical, whether to export the plot (default: FALSE)}
+  \item{filename}{Base filename without extension}
+  \item{path}{Optional output directory}
+  \item{format}{Output format, e.g. "tiff" or "jpg"}
+  \item{dpi}{Resolution in dots per inch (default: 300)}
+  \item{width}{Optional width in inches}
+  \item{height}{Optional height in inches}
+}
+Notes on export behavior:
+- Shapes and geometry will not be distorted: by default a fixed 1:1 aspect ratio is applied.
+- If only one of width/height is provided, the other is computed to preserve the aspect ratio.
+- If both are provided, the plot maintains its aspect ratio inside the image, adding padding as needed.
 }
 \examples{
 # Basic scatter plot

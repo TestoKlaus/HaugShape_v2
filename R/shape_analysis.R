@@ -24,11 +24,14 @@
 #' @return A list containing:
 #'   \describe{
 #'     \item{pca_results}{The PCA object from Momocs}
+#'     \item{efa_results}{The EFA coefficients object from Momocs}
 #'     \item{scores}{Data frame of PCA scores}
 #'     \item{summary}{Character string of PCA summary}
 #'     \item{output_path}{Path where Excel results were saved}
 #'     \item{summary_txt_path}{Path to saved PCA summary .txt file}
 #'     \item{pc_plot_jpg_path}{Path to saved PC contributions .jpg}
+#'     \item{reconstruction_model_path}{Path to RDS file containing reconstruction model}
+#'     \item{reconstruction_info_path}{Path to text file with reconstruction info}
 #'     \item{metadata}{List of analysis metadata (n_shapes, harmonics, etc.)}
 #'   }
 #'
@@ -101,6 +104,28 @@ shape_analysis <- function(shape_dir,
   
   shapes <- .import_shape_files(shape_dir, verbose)
   
+  # Capture original shape metadata BEFORE any preprocessing
+  # This is needed for denormalization during reconstruction
+  shape_metadata <- NULL
+  if (norm) {
+    if (verbose) message("Extracting shape metadata from original shapes...")
+    shape_metadata <- list()
+    for (i in seq_along(shapes$coo)) {
+      coords <- shapes$coo[[i]]
+      # Calculate centroid from ORIGINAL coordinates
+      centroid <- colMeans(coords)
+      # Calculate size (mean distance from centroid)
+      dists <- sqrt(rowSums((coords - rep(centroid, each = nrow(coords)))^2))
+      size <- mean(dists)
+      shape_metadata[[i]] <- list(
+        centroid = centroid,
+        size = size,
+        name = names(shapes$coo)[i]
+      )
+    }
+    if (verbose) message("  Captured metadata for ", length(shape_metadata), " shapes")
+  }
+  
   # Always pre-process: center -> scale -> slide in user-selected direction
   if (verbose) message("Pre-processing shapes: center -> scale -> slide '", start_point, "'")
   normalized_shapes <- .normalize_shapes(shapes, start_point, align_orientation, verbose)
@@ -109,6 +134,7 @@ shape_analysis <- function(shape_dir,
   if (verbose) message("Performing Elliptical Fourier Analysis...")
   # 'norm' controls whether descriptors are normalized to first harmonic (TRUE) or longest radius (FALSE)
   # Use start = TRUE to set a consistent phasing across shapes.
+  
   efa_results <- .perform_efa(normalized_shapes, norm = norm, harmonics = harmonics, start = TRUE, verbose = verbose)
   
   # Perform PCA ----
@@ -116,10 +142,25 @@ shape_analysis <- function(shape_dir,
   # Match manual script default: center = TRUE, scale. = FALSE (and keep fallback behavior if needed)
   # We'll directly run with scale.=FALSE to be consistent; robust fallback no longer needed.
   pca_results <- tryCatch({
-    Momocs::PCA(efa_results, center = TRUE, scale. = FALSE)
+    PCA(efa_results, center = TRUE, scale. = FALSE)
   }, error = function(e) {
     stop("Principal Component Analysis failed: ", conditionMessage(e), call. = FALSE)
   })
+  
+  # Store efa_results for reconstruction (keeping reference before any cleanup)
+  efa_results_stored <- efa_results
+  
+  # Debug: Check what's in EFA results for reconstruction
+  if (verbose) {
+    message("EFA results structure for reconstruction:")
+    message("  Components: ", paste(names(efa_results), collapse = ", "))
+    message("  norm attribute: ", if (!is.null(efa_results$norm)) efa_results$norm else "NULL")
+    message("  r1 present: ", !is.null(efa_results$r1))
+    message("  r2 present: ", !is.null(efa_results$r2))
+    message("  baseline1 present: ", !is.null(efa_results$baseline1))
+    message("  baseline2 present: ", !is.null(efa_results$baseline2))
+    message("  method attribute: ", if (!is.null(attr(efa_results, "method"))) attr(efa_results, "method") else "NULL")
+  }
   
   # Extract and format results ----
   if (verbose) message("Extracting PCA scores...")
@@ -156,13 +197,30 @@ shape_analysis <- function(shape_dir,
       print(pc_plot)
     } else {
       max_pcs <- min(num_pcs, ncol(pca_results$x))
-      print(Momocs::PCcontrib(pca_results, nax = 1:max_pcs, sd.r = c(-2,-1,0,1,2)))
+      print(PCcontrib(pca_results, nax = 1:max_pcs, sd.r = c(-2,-1,0,1,2)))
     }
     grDevices::dev.off()
   }, error = function(e) {
     grDevices::dev.off()
     warning("Failed to save PC contribution plot JPG: ", conditionMessage(e))
   })
+  
+  # Save reconstruction data ----
+  reconstruction_model_path <- file.path(output_dir, paste0(output_stem, "_reconstruction_model.rds"))
+  reconstruction_info_path <- file.path(output_dir, paste0(output_stem, "_reconstruction_info.txt"))
+  
+  if (verbose) message("Saving reconstruction model data...")
+  .save_reconstruction_data(
+    pca_results = pca_results,
+    efa_results = efa_results_stored,
+    shape_metadata = shape_metadata,
+    norm = norm,
+    harmonics = harmonics,
+    start_point = start_point,
+    model_path = reconstruction_model_path,
+    info_path = reconstruction_info_path,
+    verbose = verbose
+  )
   
   # Prepare metadata
   metadata <- list(
@@ -180,11 +238,14 @@ shape_analysis <- function(shape_dir,
   structure(
     list(
       pca_results = pca_results,
+      efa_results = efa_results_stored,
       scores = scores,
       summary = analysis_summary,
       output_path = output_file_path,
       summary_txt_path = summary_txt_path,
       pc_plot_jpg_path = pc_plot_jpg_path,
+      reconstruction_model_path = reconstruction_model_path,
+      reconstruction_info_path = reconstruction_info_path,
       metadata = metadata,
       pc_contribution_plot = pc_plot
     ),
@@ -199,10 +260,6 @@ shape_analysis <- function(shape_dir,
 .validate_shape_analysis_inputs <- function(shape_dir, norm, output_dir, output_file,
                                           num_pcs, start_point, harmonics, verbose) {
   # Check required packages
-  if (!requireNamespace("Momocs", quietly = TRUE)) {
-    stop("Package 'Momocs' is required but not installed. Please install it with: install.packages('Momocs')",
-         call. = FALSE)
-  }
   if (!requireNamespace("openxlsx", quietly = TRUE)) {
     stop("Package 'openxlsx' is required but not installed. Please install it with: install.packages('openxlsx')",
          call. = FALSE)
@@ -293,7 +350,7 @@ shape_analysis <- function(shape_dir,
   
   # Import shapes
   tryCatch({
-    shapes <- Momocs::import_jpg(shape_files) %>% Momocs::Out()
+    shapes <- import_jpg(shape_files) %>% Out()
     if (verbose) message("Successfully imported ", length(shapes), " shapes")
     return(shapes)
   }, error = function(e) {
@@ -306,13 +363,13 @@ shape_analysis <- function(shape_dir,
 .normalize_shapes <- function(shapes, start_point, align_orientation, verbose) {
   tryCatch({
     normalized_shapes <- shapes %>%
-      Momocs::coo_center() %>%
-      Momocs::coo_scale()
+      coo_center() %>%
+      coo_scale()
     if (isTRUE(align_orientation)) {
-      normalized_shapes <- normalized_shapes %>% Momocs::coo_aligncalliper()
+      normalized_shapes <- normalized_shapes %>% coo_aligncalliper()
       if (verbose) message("Orientation aligned using major axis (caliper alignment)")
     }
-    normalized_shapes <- normalized_shapes %>% Momocs::coo_slidedirection(start_point)
+    normalized_shapes <- normalized_shapes %>% coo_slidedirection(start_point)
     
     if (verbose) message("Shapes normalized with start point: ", start_point)
     return(normalized_shapes)
@@ -329,7 +386,7 @@ shape_analysis <- function(shape_dir,
     args <- list(x = normalized_shapes, norm = norm)
     if (!is.null(harmonics)) args$nb.h <- harmonics
     if (!is.null(start)) args$start <- start
-    efa_results <- do.call(Momocs::efourier, args)
+    efa_results <- do.call(efourier, args)
     
     if (verbose) message("EFA completed with normalization: ", norm)
     return(efa_results)
@@ -340,7 +397,9 @@ shape_analysis <- function(shape_dir,
 
 #' Perform Principal Component Analysis
 #' @noRd
-# No longer used: PCA is invoked directly with scale. = FALSE to match manual pipeline
+.perform_pca <- function() {
+  # No longer used: PCA is invoked directly with scale. = FALSE to match manual pipeline
+}
 
 #' Extract PCA scores as data frame
 #' @noRd
@@ -365,6 +424,175 @@ shape_analysis <- function(shape_dir,
   })
 }
 
+#' Save reconstruction data for shape reconstruction
+#' @noRd
+.save_reconstruction_data <- function(pca_results, efa_results, shape_metadata, norm, harmonics, 
+                                     start_point, model_path, info_path, verbose) {
+  
+  # Extract reconstruction components from PCA
+  reconstruction_model <- list(
+    # PCA components
+    rotation = pca_results$rotation,      # Eigenvectors (loadings)
+    center = pca_results$center,          # Centering values
+    sdev = pca_results$sdev,              # Standard deviations
+    
+    # EFA results - save the COMPLETE OutCoe object for proper reconstruction
+    efa_object = efa_results,             # Complete EFA object with all attributes
+    
+    # Shape metadata for denormalization (our manual capture - backup method)
+    shape_metadata = shape_metadata,
+    
+    # Analysis parameters
+    parameters = list(
+      norm = norm,
+      harmonics = if (is.null(harmonics)) "automatic" else harmonics,
+      start_point = start_point,
+      n_components = ncol(pca_results$x),
+      n_specimens = nrow(pca_results$x),
+      n_harmonics_used = if (!is.null(efa_results$coe)) ncol(efa_results$coe) / 4 else NULL
+    ),
+    
+    # Variance explained
+    variance_explained = if (!is.null(pca_results$eig)) {
+      pca_results$eig / sum(pca_results$eig) * 100
+    } else {
+      NULL
+    },
+    
+    # Metadata for version control and validation
+    metadata = list(
+      format_version = "1.0",
+      created_date = Sys.time(),
+      momocs_version = tryCatch(as.character(packageVersion("Momocs")), error = function(e) "unknown"),
+      r_version = R.version.string
+    )
+  )
+  
+  # Save as RDS (binary, preserves R objects exactly)
+  tryCatch({
+    saveRDS(reconstruction_model, file = model_path)
+    if (verbose) message("  Reconstruction model saved: ", basename(model_path))
+  }, error = function(e) {
+    warning("Failed to save reconstruction model RDS: ", e$message)
+  })
+  
+  # Create human-readable text summary
+  info_lines <- c(
+    "Shape Reconstruction Model Information",
+    "======================================",
+    "",
+    "Created:", format(reconstruction_model$metadata$created_date),
+    "Format Version:", reconstruction_model$metadata$format_version,
+    "Momocs Version:", reconstruction_model$metadata$momocs_version,
+    "R Version:", reconstruction_model$metadata$r_version,
+    "",
+    "Analysis Parameters:",
+    "--------------------",
+    paste("  Normalization:", reconstruction_model$parameters$norm),
+    paste("  Harmonics:", reconstruction_model$parameters$harmonics),
+    paste("  Start Point:", reconstruction_model$parameters$start_point),
+    paste("  Number of Specimens:", reconstruction_model$parameters$n_specimens),
+    paste("  Number of PCs:", reconstruction_model$parameters$n_components),
+    "",
+    "Reconstruction Components:",
+    "-------------------------",
+    paste("  Eigenvectors (rotation):", nrow(reconstruction_model$rotation), "x", ncol(reconstruction_model$rotation)),
+    paste("  Center vector length:", length(reconstruction_model$center)),
+    paste("  Standard deviations:", length(reconstruction_model$sdev)),
+    "",
+    "Variance Explained by PC:",
+    "------------------------"
+  )
+  
+  # Add variance explained for first 10 PCs
+  if (!is.null(reconstruction_model$variance_explained)) {
+    n_show <- min(10, length(reconstruction_model$variance_explained))
+    for (i in 1:n_show) {
+      info_lines <- c(info_lines, sprintf("  PC%d: %.2f%%", i, reconstruction_model$variance_explained[i]))
+    }
+    cumsum_var <- cumsum(reconstruction_model$variance_explained)
+    info_lines <- c(info_lines, "", 
+                   sprintf("  Cumulative variance (first 10 PCs): %.2f%%", cumsum_var[min(10, length(cumsum_var))]))
+  }
+  
+  info_lines <- c(info_lines, "",
+    "Usage:",
+    "------",
+    "To load this reconstruction model in R:",
+    "  model <- load_reconstruction_model('" %+% basename(model_path) %+% "')",
+    "",
+    "To reconstruct shapes from PC scores:",
+    "  reconstructed_shape <- reconstruct_shape_from_pca(",
+    "    reconstruction_model = model,",
+    "    pc_scores = c(PC1 = 2.0, PC2 = -1.5, ...)",
+    "  )"
+  )
+  
+  # Define simple string concatenation operator for cleaner code
+  `%+%` <- function(a, b) paste0(a, b)
+  
+  # Recreate info_lines with proper concatenation
+  info_lines <- c(
+    "Shape Reconstruction Model Information",
+    "======================================",
+    "",
+    paste("Created:", format(reconstruction_model$metadata$created_date)),
+    paste("Format Version:", reconstruction_model$metadata$format_version),
+    paste("Momocs Version:", reconstruction_model$metadata$momocs_version),
+    paste("R Version:", reconstruction_model$metadata$r_version),
+    "",
+    "Analysis Parameters:",
+    "--------------------",
+    paste("  Normalization:", reconstruction_model$parameters$norm),
+    paste("  Harmonics:", reconstruction_model$parameters$harmonics),
+    paste("  Start Point:", reconstruction_model$parameters$start_point),
+    paste("  Number of Specimens:", reconstruction_model$parameters$n_specimens),
+    paste("  Number of PCs:", reconstruction_model$parameters$n_components),
+    "",
+    "Reconstruction Components:",
+    "-------------------------",
+    paste("  Eigenvectors (rotation):", nrow(reconstruction_model$rotation), "x", ncol(reconstruction_model$rotation)),
+    paste("  Center vector length:", length(reconstruction_model$center)),
+    paste("  Standard deviations:", length(reconstruction_model$sdev)),
+    "",
+    "Variance Explained by PC:",
+    "------------------------"
+  )
+  
+  if (!is.null(reconstruction_model$variance_explained)) {
+    n_show <- min(10, length(reconstruction_model$variance_explained))
+    for (i in 1:n_show) {
+      info_lines <- c(info_lines, sprintf("  PC%d: %.2f%%", i, reconstruction_model$variance_explained[i]))
+    }
+    cumsum_var <- cumsum(reconstruction_model$variance_explained)
+    info_lines <- c(info_lines, "", 
+                   sprintf("  Cumulative variance (first 10 PCs): %.2f%%", cumsum_var[min(10, length(cumsum_var))]))
+  }
+  
+  info_lines <- c(info_lines, "",
+    "Usage:",
+    "------",
+    "To load this reconstruction model in R:",
+    paste0("  model <- load_reconstruction_model('", basename(model_path), "')"),
+    "",
+    "To reconstruct shapes from PC scores:",
+    "  reconstructed_shape <- reconstruct_shape_from_pca(",
+    "    reconstruction_model = model,",
+    "    pc_scores = c(PC1 = 2.0, PC2 = -1.5, ...)",
+    "  )"
+  )
+  
+  # Save text file
+  tryCatch({
+    writeLines(info_lines, con = info_path, useBytes = TRUE)
+    if (verbose) message("  Reconstruction info saved: ", basename(info_path))
+  }, error = function(e) {
+    warning("Failed to save reconstruction info text: ", e$message)
+  })
+  
+  invisible(TRUE)
+}
+
 #' Generate PCA summary
 #' @noRd
 .generate_pca_summary <- function(pca_results) {
@@ -383,7 +611,7 @@ shape_analysis <- function(shape_dir,
   tryCatch({
     # Ensure we don't request more PCs than available
     max_pcs <- min(num_pcs, ncol(pca_results$x))
-    Momocs::PCcontrib(pca_results, nax = 1:max_pcs, sd.r = c(-2, -1, 0, 1, 2))
+    PCcontrib(pca_results, nax = 1:max_pcs, sd.r = c(-2, -1, 0, 1, 2))
   }, error = function(e) {
     warning("Failed to create PC contribution plot: ", e$message)
     return(NULL)
@@ -404,8 +632,159 @@ print.shape_analysis_result <- function(x, ...) {
   cat("  Harmonics:", x$metadata$n_harmonics, "\n")
   cat("  Normalization:", x$metadata$normalization, "\n")
   cat("  Start point:", x$metadata$start_point, "\n")
-  cat("  Analysis date:", format(x$metadata$analysis_date), "\n")
-  cat("  Output saved to:", x$output_path, "\n\n")
+  cat("  Analysis date:", format(x$metadata$analysis_date), "\n\n")
+  
+  cat("Output files:\n")
+  cat("  PCA scores:", x$output_path, "\n")
+  cat("  Summary:", x$summary_txt_path, "\n")
+  cat("  PC plot:", x$pc_plot_jpg_path, "\n")
+  cat("  Reconstruction model:", x$reconstruction_model_path, "\n")
+  cat("  Reconstruction info:", x$reconstruction_info_path, "\n\n")
+  
   cat("PCA Summary:\n")
   cat(x$summary, "\n")
+}
+
+# Reconstruction Model Loader ----
+
+#' Load Shape Reconstruction Model
+#'
+#' Loads a reconstruction model saved by `shape_analysis()` that contains all the
+#' data needed to reconstruct shapes from PC scores: eigenvectors, EFA coefficients,
+#' and analysis parameters.
+#'
+#' @param model_path Character string specifying the path to the reconstruction model
+#'   RDS file (typically named `*_reconstruction_model.rds`).
+#' @param validate Logical indicating whether to validate the model structure. Default: TRUE.
+#' @param verbose Logical indicating whether to print loading messages. Default: TRUE.
+#'
+#' @return A list containing:
+#'   \describe{
+#'     \item{rotation}{Matrix of eigenvectors (loadings) from PCA}
+#'     \item{center}{Centering vector from PCA}
+#'     \item{sdev}{Standard deviations from PCA}
+#'     \item{efa_coe}{EFA coefficient matrix from Momocs}
+#'     \item{efa_method}{EFA method attribute}
+#'     \item{efa_norm}{EFA normalization parameters}
+#'     \item{parameters}{List of analysis parameters (norm, harmonics, start_point, etc.)}
+#'     \item{variance_explained}{Vector of variance explained by each PC}
+#'     \item{metadata}{Metadata about model creation (version, date, etc.)}
+#'   }
+#'
+#' @details
+#' This function loads reconstruction models created by `shape_analysis()`. The model
+#' contains all necessary information to reconstruct shapes from principal component scores:
+#' 
+#' - **PCA components**: Eigenvectors (rotation matrix), centering values, and standard deviations
+#' - **EFA coefficients**: Fourier coefficient matrix and normalization parameters
+#' - **Parameters**: Analysis settings used (normalization, harmonics, start point)
+#' - **Metadata**: Version info and creation timestamp
+#'
+#' The loaded model can be used with shape reconstruction functions to generate
+#' contours from PC scores.
+#'
+#' @examples
+#' \dontrun{
+#' # Load a reconstruction model
+#' model <- load_reconstruction_model("shape_analysis_reconstruction_model.rds")
+#'
+#' # Check model information
+#' print(model$parameters)
+#' print(model$metadata)
+#'
+#' # Use with reconstruction function (when implemented)
+#' # reconstructed <- reconstruct_shape_from_pca(model, pc_scores = c(PC1 = 2.0, PC2 = -1.5))
+#' }
+#'
+#' @export
+load_reconstruction_model <- function(model_path, validate = TRUE, verbose = TRUE) {
+  
+  # Input validation ----
+  if (!is.character(model_path) || length(model_path) != 1 || !nzchar(model_path)) {
+    stop("'model_path' must be a non-empty character string", call. = FALSE)
+  }
+  
+  if (!file.exists(model_path)) {
+    stop("Reconstruction model file does not exist: ", model_path, call. = FALSE)
+  }
+  
+  if (!is.logical(validate) || length(validate) != 1) {
+    stop("'validate' must be a single logical value", call. = FALSE)
+  }
+  
+  if (!is.logical(verbose) || length(verbose) != 1) {
+    stop("'verbose' must be a single logical value", call. = FALSE)
+  }
+  
+  # Load model ----
+  if (verbose) message("Loading reconstruction model from: ", model_path)
+  
+  model <- tryCatch({
+    readRDS(model_path)
+  }, error = function(e) {
+    stop("Failed to load reconstruction model: ", e$message, call. = FALSE)
+  })
+  
+  # Validate model structure ----
+  if (validate) {
+    if (verbose) message("Validating model structure...")
+    
+    required_components <- c("rotation", "center", "sdev", "parameters", "metadata")
+    missing_components <- setdiff(required_components, names(model))
+    
+    if (length(missing_components) > 0) {
+      stop("Reconstruction model is missing required components: ",
+           paste(missing_components, collapse = ", "), call. = FALSE)
+    }
+    
+    # Check for either efa_object (new format) or efa_coe (old format)
+    if (is.null(model$efa_object) && is.null(model$efa_coe)) {
+      stop("Reconstruction model is missing EFA data (neither efa_object nor efa_coe found)", call. = FALSE)
+    }
+    
+    # Check metadata version
+    if (!is.null(model$metadata$format_version)) {
+      if (verbose) {
+        message("Model format version: ", model$metadata$format_version)
+        message("Created: ", format(model$metadata$created_date))
+      }
+      
+      # Future version compatibility checks can go here
+      supported_versions <- c("1.0")
+      if (!model$metadata$format_version %in% supported_versions) {
+        warning("Reconstruction model format version ", model$metadata$format_version,
+                " may not be fully supported. Supported versions: ",
+                paste(supported_versions, collapse = ", "))
+      }
+    }
+    
+    # Check parameter structure
+    required_params <- c("norm", "harmonics", "start_point", "n_components", "n_specimens")
+    missing_params <- setdiff(required_params, names(model$parameters))
+    
+    if (length(missing_params) > 0) {
+      warning("Model parameters missing: ", paste(missing_params, collapse = ", "))
+    }
+    
+    # Check dimensions consistency
+    if (!is.null(model$rotation) && !is.null(model$center)) {
+      if (nrow(model$rotation) != length(model$center)) {
+        warning("Dimension mismatch: rotation matrix rows (", nrow(model$rotation),
+                ") != center vector length (", length(model$center), ")")
+      }
+    }
+    
+    if (verbose) {
+      message("Model validation passed")
+      message("  Specimens: ", model$parameters$n_specimens)
+      message("  PCs: ", model$parameters$n_components)
+      message("  Harmonics: ", model$parameters$harmonics)
+      message("  Normalization: ", model$parameters$norm)
+    }
+  }
+  
+  # Return model
+  if (verbose) message("Reconstruction model loaded successfully")
+  
+  return(model)
 }

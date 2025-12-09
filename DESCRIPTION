@@ -16,7 +16,6 @@ RoxygenNote: 7.3.3
 Depends: 
     R (>= 4.0.0)
 Imports:
-    Momocs,
     ggplot2,
     scales,
     dplyr,
@@ -33,6 +32,7 @@ Imports:
     DT,
     plotly,
     magrittr,
+    jpeg,
     grDevices,
     graphics,
     stats,

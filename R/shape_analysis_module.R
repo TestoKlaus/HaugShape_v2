@@ -172,11 +172,11 @@ shape_analysis_server <- function(id) {
       if (!grepl("\\.(xlsx|xls)$", of, ignore.case = TRUE)) of <- paste0(of, ".xlsx")
 
       # Ensure packages
-      if (!isTRUE(momocs_ready()) || !isTRUE(openxlsx_ready())) {
+      if (!isTRUE(openxlsx_ready())) {
         showNotification("Installing required packages...", type = "message")
       }
-      if (!requireNamespace("Momocs", quietly = TRUE) || !requireNamespace("openxlsx", quietly = TRUE)) {
-        showNotification("Packages 'Momocs' and 'openxlsx' are required.", type = "error", duration = 8)
+      if (!requireNamespace("openxlsx", quietly = TRUE)) {
+        showNotification("Package 'openxlsx' is required.", type = "error", duration = 8)
         return(invisible(NULL))
       }
 
@@ -213,7 +213,16 @@ shape_analysis_server <- function(id) {
     output$run_meta <- renderUI({
       res <- results(); req(res)
       tags$div(
-        tags$p(sprintf("Analyzed %d shapes. Output: %s", res$metadata$n_shapes, res$output_path))
+        tags$p(sprintf("Analyzed %d shapes.", res$metadata$n_shapes)),
+        tags$h5("Output Files:"),
+        tags$ul(
+          tags$li(tags$strong("PCA Scores: "), tags$code(basename(res$output_path))),
+          tags$li(tags$strong("Summary: "), tags$code(basename(res$summary_txt_path))),
+          tags$li(tags$strong("PC Plot: "), tags$code(basename(res$pc_plot_jpg_path))),
+          tags$li(tags$strong("Reconstruction Model: "), tags$code(basename(res$reconstruction_model_path))),
+          tags$li(tags$strong("Reconstruction Info: "), tags$code(basename(res$reconstruction_info_path)))
+        ),
+        tags$p(tags$em("All files saved to: ", dirname(res$output_path)))
       )
     })
 
@@ -229,7 +238,7 @@ shape_analysis_server <- function(id) {
         try(print(res$pc_contribution_plot), silent = TRUE)
       } else {
         max_pcs <- min(input$num_pcs, ncol(res$pca_results$x))
-        Momocs::PCcontrib(res$pca_results, nax = 1:max_pcs, sd.r = c(-2,-1,0,1,2))
+        PCcontrib(res$pca_results, nax = 1:max_pcs, sd.r = c(-2,-1,0,1,2))
       }
     })
 

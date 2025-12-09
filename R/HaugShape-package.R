@@ -3,9 +3,9 @@
 
 ## usethis namespace: start
 #' @importFrom magrittr %>%
+#' @importFrom jpeg readJPEG
 #' @import ggplot2
 #' @import dplyr
-#' @import Momocs
 #' @import shiny
 ## usethis namespace: end
 NULL

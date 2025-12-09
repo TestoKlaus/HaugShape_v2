@@ -86,7 +86,7 @@ morph_shapes_ui <- function(id) {
             min = 0.1,
             max = 0.9,
             value = 0.5,
-            step = 0.01
+            step = 0.001
           ),
           
           radioButtons(
@@ -323,6 +323,7 @@ morph_shapes_server <- function(id) {
         img <- magick::image_read(input$upload_image$datapath)
         rv$uploaded_image <- img
         rv$uploaded_path <- input$upload_image$datapath
+        rv$uploaded_filename <- tools::file_path_sans_ext(input$upload_image$name)
         
         showNotification("Image uploaded successfully!", type = "message")
       }, error = function(e) {
@@ -574,12 +575,8 @@ morph_shapes_server <- function(id) {
               ),
               output_options = list(
                 format = "jpg",
-              processing_options = list(
-                threshold = input$threshold,
-                gamma = 1.0,
-                blur_sigma = 0,
-                auto_align = FALSE
-              ),validate_binary = TRUE,
+                naming_pattern = paste0(rv$uploaded_filename, "_morphed_{step}"),
+                validate_binary = TRUE,
                 similarity_threshold = 0
               ),
               export_options = list(),
