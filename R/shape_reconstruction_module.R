@@ -43,8 +43,7 @@ shape_reconstruction_ui <- function(id) {
           
           # Reconstruction options
           checkboxInput(ns("show_original"), "Show original shape (if available)", value = FALSE),
-          numericInput(ns("plot_width"), "Plot width", value = 600, min = 200, max = 1200, step = 50),
-          numericInput(ns("plot_height"), "Plot height", value = 600, min = 200, max = 1200, step = 50),
+          numericInput(ns("plot_size"), "Plot size (pixels)", value = 600, min = 300, max = 1200, step = 50),
           
           hr(),
           
@@ -330,15 +329,32 @@ shape_reconstruction_server <- function(id) {
       # Collect PC scores from inputs
       n_pcs <- min(10, model$parameters$n_components)
       pc_scores <- sapply(1:n_pcs, function(i) {
-        input[[paste0("pc", i)]] %||% 0
+        val <- input[[paste0("pc", i)]]
+        if (is.null(val)) return(0)
+        as.numeric(val)
       })
       names(pc_scores) <- paste0("PC", 1:n_pcs)
+      
+      # Debug: check collected scores
+      if (any(is.na(pc_scores))) {
+        showNotification("Invalid PC scores detected (NA values). Using 0 for missing values.", 
+                        type = "warning", duration = 5)
+        pc_scores[is.na(pc_scores)] <- 0
+      }
       
       withProgress(message = "Reconstructing shape...", value = 0.5, {
         shape <- tryCatch({
           .reconstruct_single_shape(model, pc_scores)
         }, error = function(e) {
-          showNotification(paste("Reconstruction failed:", conditionMessage(e)), type = "error", duration = 8)
+          # More detailed error message
+          err_msg <- conditionMessage(e)
+          showNotification(
+            paste0("Reconstruction failed: ", err_msg, 
+                   "\nModel dimensions: center=", length(model$center), 
+                   ", rotation=", paste(dim(model$rotation), collapse="x")),
+            type = "error", 
+            duration = 10
+          )
           NULL
         })
         
@@ -351,37 +367,76 @@ shape_reconstruction_server <- function(id) {
     
     # Helper function to reconstruct a single shape
     .reconstruct_single_shape <- function(model, pc_scores) {
-      # Ensure pc_scores has correct length
-      if (length(pc_scores) > ncol(model$rotation)) {
-        pc_scores <- pc_scores[1:ncol(model$rotation)]
-      } else if (length(pc_scores) < ncol(model$rotation)) {
-        # Pad with zeros
-        full_scores <- rep(0, ncol(model$rotation))
+      # Ensure pc_scores is numeric vector
+      pc_scores <- as.numeric(pc_scores)
+      
+      # Get dimensions
+      n_coefs <- length(model$center)
+      n_pcs <- ncol(model$rotation)
+      
+      # Ensure pc_scores has correct length and pad with zeros if needed
+      if (length(pc_scores) > n_pcs) {
+        pc_scores <- pc_scores[1:n_pcs]
+      } else if (length(pc_scores) < n_pcs) {
+        full_scores <- rep(0, n_pcs)
         full_scores[1:length(pc_scores)] <- pc_scores
         pc_scores <- full_scores
       }
       
       # Reconstruct Fourier coefficients
-      # fourier_coefs = center + (pc_scores × rotation)
-      reconstructed_coefs <- model$center + as.vector(pc_scores %*% t(model$rotation))
+      # Formula: fourier_coefs = center + (pc_scores × rotation matrix)
+      # rotation is [n_coefs x n_pcs], pc_scores is [n_pcs]
+      # Result should be [n_coefs]
+      pc_matrix <- matrix(pc_scores, nrow = 1)  # Make it a row vector [1 x n_pcs]
+      contribution <- pc_matrix %*% t(model$rotation)  # [1 x n_pcs] × [n_pcs x n_coefs] = [1 x n_coefs]
+      reconstructed_coefs <- model$center + as.vector(contribution)
+      
+      # Verify coefficient length
+      if (length(reconstructed_coefs) != n_coefs) {
+        stop("Coefficient length mismatch: ", length(reconstructed_coefs), " vs ", n_coefs)
+      }
       
       # Convert back to EFA coefficient structure
-      # The efa_results object contains the structure we need
       efa_obj <- model$efa_results
       
-      # Create a single-specimen version with reconstructed coefficients
+      # Create a single-specimen OutCoe object with reconstructed coefficients
       reconstructed_efa <- efa_obj
-      reconstructed_efa$coe <- matrix(reconstructed_coefs, nrow = 1)
-      rownames(reconstructed_efa$coe) <- "reconstructed"
+      
+      # Ensure we have the right coefficient matrix structure
+      if (!is.null(efa_obj$coe) && is.matrix(efa_obj$coe)) {
+        # Copy structure and replace with our coefficients
+        reconstructed_efa$coe <- matrix(reconstructed_coefs, nrow = 1)
+        colnames(reconstructed_efa$coe) <- colnames(efa_obj$coe)
+        rownames(reconstructed_efa$coe) <- "reconstructed"
+      } else {
+        stop("EFA object does not contain valid coefficient matrix")
+      }
+      
+      # Copy other necessary attributes
+      if (!is.null(efa_obj$norm)) reconstructed_efa$norm <- efa_obj$norm
+      if (!is.null(efa_obj$baseline1)) reconstructed_efa$baseline1 <- efa_obj$baseline1
+      if (!is.null(efa_obj$baseline2)) reconstructed_efa$baseline2 <- efa_obj$baseline2
       
       # Use inverse Fourier to get outline coordinates
-      outline <- Momocs::efourier_i(reconstructed_efa, nb.h = NULL, nb.pts = 120)
+      # Determine number of harmonics from coefficient structure
+      n_harmonics <- (ncol(reconstructed_efa$coe)) / 4  # EFA has 4 coefficients per harmonic (An, Bn, Cn, Dn)
+      
+      outline <- Momocs::efourier_i(reconstructed_efa, nb.h = n_harmonics, nb.pts = 120)
       
       # Extract coordinates
-      if (inherits(outline, "Out")) {
+      if (inherits(outline, "Out") && !is.null(outline$coo)) {
         coords <- outline$coo[[1]]
-      } else {
+      } else if (is.matrix(outline)) {
         coords <- outline
+      } else if (is.list(outline) && !is.null(outline[[1]])) {
+        coords <- outline[[1]]
+      } else {
+        stop("Could not extract coordinates from inverse Fourier result")
+      }
+      
+      # Ensure coords is a matrix with 2 columns
+      if (!is.matrix(coords) || ncol(coords) != 2) {
+        stop("Reconstructed coordinates are not a valid 2-column matrix")
       }
       
       return(coords)
@@ -407,7 +462,11 @@ shape_reconstruction_server <- function(id) {
       pc_text <- paste(names(shape_data$pc_scores), "=", round(shape_data$pc_scores, 2), collapse = ", ")
       mtext(pc_text, side = 3, line = 0.5, cex = 0.8, col = "gray30")
       
-    }, height = function() input$plot_height)
+    }, height = function() {
+      size <- input$plot_size
+      if (is.null(size) || !is.numeric(size)) return(600)
+      return(as.integer(size))
+    })
     
     # Display reconstruction info
     output$reconstruction_info <- renderText({
