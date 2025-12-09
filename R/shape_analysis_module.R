@@ -172,11 +172,11 @@ shape_analysis_server <- function(id) {
       if (!grepl("\\.(xlsx|xls)$", of, ignore.case = TRUE)) of <- paste0(of, ".xlsx")
 
       # Ensure packages
-      if (!isTRUE(momocs_ready()) || !isTRUE(openxlsx_ready())) {
+      if (!isTRUE(openxlsx_ready())) {
         showNotification("Installing required packages...", type = "message")
       }
-      if (!requireNamespace("Momocs", quietly = TRUE) || !requireNamespace("openxlsx", quietly = TRUE)) {
-        showNotification("Packages 'Momocs' and 'openxlsx' are required.", type = "error", duration = 8)
+      if (!requireNamespace("openxlsx", quietly = TRUE)) {
+        showNotification("Package 'openxlsx' is required.", type = "error", duration = 8)
         return(invisible(NULL))
       }
 

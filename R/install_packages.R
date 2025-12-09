@@ -149,52 +149,12 @@ install_haugshape_packages <- function(force_reinstall = FALSE, verbose = TRUE) 
   return(invisible(TRUE))
 }
 
-#' Install Momocs with special handling
-#' @noRd
-install_momocs_with_dependencies <- function(verbose = TRUE) {
-  
-  # Momocs dependencies that sometimes need special attention
-  momocs_deps <- c("sp", "rgeos", "maptools", "dplyr", "magrittr", "plyr")
-  
-  if (verbose) cat("\n    Installing Momocs dependencies...")
-  
-  for (dep in momocs_deps) {
-    if (!requireNamespace(dep, quietly = TRUE)) {
-      tryCatch({
-        install.packages(dep, repos = "https://cran.r-project.org", quiet = !verbose)
-      }, error = function(e) {
-        if (verbose) warning(paste("Could not install Momocs dependency:", dep))
-      })
-    }
-  }
-  
-  if (verbose) cat(" installing Momocs...")
-  
-  # Try different installation methods for Momocs
-  tryCatch({
-    # First try standard installation
-    install.packages("Momocs", repos = "https://cran.r-project.org", quiet = !verbose)
-    
-    # Verify installation
-    if (!requireNamespace("Momocs", quietly = TRUE)) {
-      stop("Standard installation failed")
-    }
-    
-  }, error = function(e1) {
-    if (verbose) cat(" (trying alternative method)...")
-    
-    tryCatch({
-      # Alternative: install from source or development version if needed
-      install.packages("Momocs", type = "source", repos = "https://cran.r-project.org")
-      
-    }, error = function(e2) {
-      if (verbose) {
-        warning("Momocs installation failed with both methods. You may need to install manually.")
-        cat("\n    Manual installation: install.packages('Momocs')\n")
-      }
-    })
-  })
-}
+# Note: Momocs installation functions removed as we now use vendored Momocs code
+# #' Install Momocs with special handling
+# #' @noRd
+# install_momocs_with_dependencies <- function(verbose = TRUE) {
+#   ... (function removed)
+# }
 
 #' Check HaugShape Package Status
 #'
@@ -206,7 +166,7 @@ check_haugshape_packages <- function() {
   required_packages <- c(
     "dplyr", "ggplot2", "readxl", "DT", "plotly",
     "shiny", "shinydashboard", "shinyWidgets", "shinycssloaders", "colourpicker",
-    "Momocs", "shapes", "MASS", "cluster", "vegan"
+    "shapes", "MASS", "cluster", "vegan"
   )
   
   status <- data.frame(

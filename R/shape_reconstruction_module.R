@@ -117,15 +117,6 @@ shape_reconstruction_server <- function(id) {
       shinyfiles_ready(isTRUE(ready))
     })
     
-    observe({
-      ready <- requireNamespace("Momocs", quietly = TRUE)
-      if (!isTRUE(ready)) {
-        try(install.packages("Momocs", repos = "https://cran.r-project.org", quiet = TRUE), silent = TRUE)
-        ready <- requireNamespace("Momocs", quietly = TRUE)
-      }
-      momocs_ready(isTRUE(ready))
-    })
-    
     # Model file chooser UI
     output$model_file_ui <- renderUI({
       if (isTRUE(shinyfiles_ready())) {
@@ -217,11 +208,6 @@ shape_reconstruction_server <- function(id) {
       
       if (!file.exists(path)) {
         showNotification("Model file does not exist.", type = "error")
-        return()
-      }
-      
-      if (!requireNamespace("Momocs", quietly = TRUE)) {
-        showNotification("Package 'Momocs' is required but not available.", type = "error")
         return()
       }
       
@@ -318,11 +304,6 @@ shape_reconstruction_server <- function(id) {
       
       if (is.null(model)) {
         showNotification("Please load a reconstruction model first.", type = "warning")
-        return()
-      }
-      
-      if (!requireNamespace("Momocs", quietly = TRUE)) {
-        showNotification("Package 'Momocs' is required.", type = "error")
         return()
       }
       

@@ -341,12 +341,6 @@ data_import_server <- function(id) {
       id_col <- input$id_col; req(id_col)
       shp_dir <- shape_dir_path(); req(nzchar(shp_dir))
 
-      # Ensure Momocs is available
-      if (!requireNamespace("Momocs", quietly = TRUE)) {
-        try(install.packages("Momocs", repos = "https://cran.r-project.org", quiet = TRUE), silent = TRUE)
-      }
-      validate(need(requireNamespace("Momocs", quietly = TRUE), "Package 'Momocs' is required and could not be installed automatically."))
-
       # Fixed options (simple defaults); can be adjusted here if needed
       opts <- list(
         recursive = FALSE,

@@ -260,10 +260,6 @@ shape_analysis <- function(shape_dir,
 .validate_shape_analysis_inputs <- function(shape_dir, norm, output_dir, output_file,
                                           num_pcs, start_point, harmonics, verbose) {
   # Check required packages
-  if (!requireNamespace("Momocs", quietly = TRUE)) {
-    stop("Package 'Momocs' is required but not installed. Please install it with: install.packages('Momocs')",
-         call. = FALSE)
-  }
   if (!requireNamespace("openxlsx", quietly = TRUE)) {
     stop("Package 'openxlsx' is required but not installed. Please install it with: install.packages('openxlsx')",
          call. = FALSE)
