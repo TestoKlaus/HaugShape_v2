@@ -530,8 +530,21 @@ shape_reconstruction_server <- function(id) {
       class(reconstructed_coe) <- c("OutCoe", "Coe")
       if (!is.null(model$efa_method)) {
         attr(reconstructed_coe, "method") <- model$efa_method
+        message("Method attribute: ", model$efa_method)
       } else {
+        # If method is NULL, assume efourier since that's what we're using
         attr(reconstructed_coe, "method") <- "efourier"
+        message("Method attribute not in model, defaulting to: efourier")
+      }
+      
+      # CRITICAL: Check if we have normalization parameters
+      has_norm_params <- !is.null(reconstructed_coe$norm) && reconstructed_coe$norm == TRUE &&
+                         !is.null(reconstructed_coe$r1) && !is.null(reconstructed_coe$r2)
+      
+      if (has_norm_params) {
+        message("Has normalization parameters - shape will be denormalized")
+      } else {
+        message("No normalization parameters - shape will remain in coefficient space")
       }
       
       # Determine number of harmonics
@@ -580,10 +593,7 @@ shape_reconstruction_server <- function(id) {
         x <- numeric(nb_pts)
         y <- numeric(nb_pts)
         
-        # For non-normalized EFA, we need to reconstruct the DC component (A0, C0)
-        # which represents the centroid offset
-        # In EFA without normalization, the first harmonic contains position info
-        
+        # Standard inverse Fourier: sum harmonics
         for (h in 1:n_harmonics) {
           idx <- (h - 1) * 4 + 1:4
           An <- reconstructed_coefs[idx[1]]
@@ -591,9 +601,37 @@ shape_reconstruction_server <- function(id) {
           Cn <- reconstructed_coefs[idx[3]]
           Dn <- reconstructed_coefs[idx[4]]
           
-          # Standard inverse Fourier: add each harmonic's contribution
           x <- x + An * cos(h * theta) + Bn * sin(h * theta)
           y <- y + Cn * cos(h * theta) + Dn * sin(h * theta)
+        }
+        
+        # Apply denormalization if parameters are available
+        if (!is.null(reconstructed_coe$norm) && reconstructed_coe$norm == TRUE) {
+          message("Applying denormalization transformations...")
+          
+          # Get normalization parameters
+          r1 <- reconstructed_coe$r1
+          r2 <- reconstructed_coe$r2
+          baseline1 <- reconstructed_coe$baseline1
+          baseline2 <- reconstructed_coe$baseline2
+          
+          if (!is.null(r1) && !is.null(r2) && !is.null(baseline1) && !is.null(baseline2)) {
+            # Scale by size (r2 is the size parameter)
+            if (r2 > 0) {
+              x <- x * r2
+              y <- y * r2
+              message("  Scaled by r2 = ", round(r2, 3))
+            }
+            
+            # Translate by baseline (centroid position)
+            if (length(baseline1) >= 2) {
+              x <- x + baseline1[1]
+              y <- y + baseline1[2]
+              message("  Translated by baseline1 = [", paste(round(baseline1, 3), collapse = ", "), "]")
+            }
+          } else {
+            message("  Warning: Some normalization parameters missing, skipping denormalization")
+          }
         }
         
         coords <- cbind(x, y)
@@ -601,7 +639,7 @@ shape_reconstruction_server <- function(id) {
         message("X range: [", round(min(x), 3), ", ", round(max(x), 3), "]")
         message("Y range: [", round(min(y), 3), ", ", round(max(y), 3), "]")
         
-        # Check if shape looks degenerate (aspect ratio too extreme or too small)
+        # Check if shape looks degenerate
         x_range <- max(x) - min(x)
         y_range <- max(y) - min(y)
         aspect_ratio <- if (y_range > 0) x_range / y_range else 0
@@ -613,7 +651,7 @@ shape_reconstruction_server <- function(id) {
         }
         if (aspect_ratio < 0.1 || aspect_ratio > 10) {
           warning("Reconstructed shape has extreme aspect ratio: ", round(aspect_ratio, 3), 
-                  ". This may indicate missing normalization parameters.")
+                  ". This may indicate missing or incorrect normalization parameters.")
         }
       }
       
