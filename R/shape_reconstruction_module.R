@@ -396,40 +396,35 @@ shape_reconstruction_server <- function(id) {
         stop("Coefficient length mismatch: ", length(reconstructed_coefs), " vs ", n_coefs)
       }
       
-      # Convert back to EFA coefficient structure
-      efa_obj <- model$efa_results
+      # Build a minimal OutCoe-like structure for inverse Fourier
+      # We need to create a proper Coe object that efourier_i can use
+      reconstructed_coe <- list()
+      reconstructed_coe$coe <- matrix(reconstructed_coefs, nrow = 1)
+      rownames(reconstructed_coe$coe) <- "reconstructed"
       
-      # Create a single-specimen OutCoe object with reconstructed coefficients
-      reconstructed_efa <- efa_obj
-      
-      # Ensure we have the right coefficient matrix structure
-      if (!is.null(efa_obj$coe) && is.matrix(efa_obj$coe)) {
-        # Copy structure and replace with our coefficients
-        reconstructed_efa$coe <- matrix(reconstructed_coefs, nrow = 1)
-        
-        # Only set column names if original has them and lengths match
-        if (!is.null(colnames(efa_obj$coe)) && length(colnames(efa_obj$coe)) == ncol(reconstructed_efa$coe)) {
-          colnames(reconstructed_efa$coe) <- colnames(efa_obj$coe)
-        }
-        
-        rownames(reconstructed_efa$coe) <- "reconstructed"
-      } else {
-        stop("EFA object does not contain valid coefficient matrix")
+      # Copy essential attributes from saved model
+      if (!is.null(model$efa_norm)) {
+        reconstructed_coe$norm <- model$efa_norm
+      }
+      if (!is.null(model$efa_baseline1)) {
+        reconstructed_coe$baseline1 <- model$efa_baseline1
+      }
+      if (!is.null(model$efa_baseline2)) {
+        reconstructed_coe$baseline2 <- model$efa_baseline2
       }
       
-      # Copy other necessary attributes if they exist
-      if (!is.null(efa_obj$norm)) reconstructed_efa$norm <- efa_obj$norm
-      if (!is.null(efa_obj$baseline1)) reconstructed_efa$baseline1 <- efa_obj$baseline1
-      if (!is.null(efa_obj$baseline2)) reconstructed_efa$baseline2 <- efa_obj$baseline2
-      
-      # Preserve the method attribute
-      if (!is.null(attr(efa_obj, "method"))) {
-        attr(reconstructed_efa, "method") <- attr(efa_obj, "method")
+      # Set the class and method attribute
+      if (!is.null(model$efa_method)) {
+        attr(reconstructed_coe, "method") <- model$efa_method
+        class(reconstructed_coe) <- c("OutCoe", "Coe")
+      } else {
+        class(reconstructed_coe) <- c("OutCoe", "Coe")
+        attr(reconstructed_coe, "method") <- "efourier"
       }
       
       # Use inverse Fourier to get outline coordinates
       # Determine number of harmonics from coefficient structure
-      n_harmonics <- (ncol(reconstructed_efa$coe)) / 4  # EFA has 4 coefficients per harmonic (An, Bn, Cn, Dn)
+      n_harmonics <- ncol(reconstructed_coe$coe) / 4  # EFA has 4 coefficients per harmonic
       
       # Ensure n_harmonics is an integer
       if (n_harmonics != as.integer(n_harmonics)) {
@@ -437,7 +432,12 @@ shape_reconstruction_server <- function(id) {
       }
       n_harmonics <- as.integer(n_harmonics)
       
-      outline <- Momocs::efourier_i(reconstructed_efa, nb.h = n_harmonics, nb.pts = 120)
+      # Perform inverse Fourier transformation
+      outline <- tryCatch({
+        Momocs::efourier_i(reconstructed_coe, nb.h = n_harmonics, nb.pts = 120)
+      }, error = function(e) {
+        stop("Inverse Fourier failed: ", conditionMessage(e))
+      })
       
       # Extract coordinates
       if (inherits(outline, "Out") && !is.null(outline$coo)) {

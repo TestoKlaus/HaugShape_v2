@@ -402,8 +402,12 @@ shape_analysis <- function(shape_dir,
     center = pca_results$center,          # Centering values
     sdev = pca_results$sdev,              # Standard deviations
     
-    # EFA results (full object for complete reconstruction)
-    efa_results = efa_results,
+    # EFA results - save the essential components
+    efa_coe = efa_results$coe,            # Coefficient matrix
+    efa_method = attr(efa_results, "method"),  # Method attribute
+    efa_norm = if (!is.null(efa_results$norm)) efa_results$norm else NULL,
+    efa_baseline1 = if (!is.null(efa_results$baseline1)) efa_results$baseline1 else NULL,
+    efa_baseline2 = if (!is.null(efa_results$baseline2)) efa_results$baseline2 else NULL,
     
     # Analysis parameters
     parameters = list(
@@ -411,7 +415,8 @@ shape_analysis <- function(shape_dir,
       harmonics = if (is.null(harmonics)) "automatic" else harmonics,
       start_point = start_point,
       n_components = ncol(pca_results$x),
-      n_specimens = nrow(pca_results$x)
+      n_specimens = nrow(pca_results$x),
+      n_harmonics_used = if (!is.null(efa_results$coe)) ncol(efa_results$coe) / 4 else NULL
     ),
     
     # Variance explained
@@ -625,7 +630,9 @@ print.shape_analysis_result <- function(x, ...) {
 #'     \item{rotation}{Matrix of eigenvectors (loadings) from PCA}
 #'     \item{center}{Centering vector from PCA}
 #'     \item{sdev}{Standard deviations from PCA}
-#'     \item{efa_results}{EFA coefficients object from Momocs}
+#'     \item{efa_coe}{EFA coefficient matrix from Momocs}
+#'     \item{efa_method}{EFA method attribute}
+#'     \item{efa_norm}{EFA normalization parameters}
 #'     \item{parameters}{List of analysis parameters (norm, harmonics, start_point, etc.)}
 #'     \item{variance_explained}{Vector of variance explained by each PC}
 #'     \item{metadata}{Metadata about model creation (version, date, etc.)}
@@ -636,7 +643,7 @@ print.shape_analysis_result <- function(x, ...) {
 #' contains all necessary information to reconstruct shapes from principal component scores:
 #' 
 #' - **PCA components**: Eigenvectors (rotation matrix), centering values, and standard deviations
-#' - **EFA results**: Full Elliptical Fourier Analysis object with coefficients
+#' - **EFA coefficients**: Fourier coefficient matrix and normalization parameters
 #' - **Parameters**: Analysis settings used (normalization, harmonics, start point)
 #' - **Metadata**: Version info and creation timestamp
 #'
@@ -689,7 +696,7 @@ load_reconstruction_model <- function(model_path, validate = TRUE, verbose = TRU
   if (validate) {
     if (verbose) message("Validating model structure...")
     
-    required_components <- c("rotation", "center", "sdev", "efa_results", "parameters", "metadata")
+    required_components <- c("rotation", "center", "sdev", "efa_coe", "parameters", "metadata")
     missing_components <- setdiff(required_components, names(model))
     
     if (length(missing_components) > 0) {
