@@ -104,6 +104,28 @@ shape_analysis <- function(shape_dir,
   
   shapes <- .import_shape_files(shape_dir, verbose)
   
+  # Capture original shape metadata BEFORE any preprocessing
+  # This is needed for denormalization during reconstruction
+  shape_metadata <- NULL
+  if (norm) {
+    if (verbose) message("Extracting shape metadata from original shapes...")
+    shape_metadata <- list()
+    for (i in seq_along(shapes$coo)) {
+      coords <- shapes$coo[[i]]
+      # Calculate centroid from ORIGINAL coordinates
+      centroid <- colMeans(coords)
+      # Calculate size (mean distance from centroid)
+      dists <- sqrt(rowSums((coords - rep(centroid, each = nrow(coords)))^2))
+      size <- mean(dists)
+      shape_metadata[[i]] <- list(
+        centroid = centroid,
+        size = size,
+        name = names(shapes$coo)[i]
+      )
+    }
+    if (verbose) message("  Captured metadata for ", length(shape_metadata), " shapes")
+  }
+  
   # Always pre-process: center -> scale -> slide in user-selected direction
   if (verbose) message("Pre-processing shapes: center -> scale -> slide '", start_point, "'")
   normalized_shapes <- .normalize_shapes(shapes, start_point, align_orientation, verbose)
@@ -112,27 +134,6 @@ shape_analysis <- function(shape_dir,
   if (verbose) message("Performing Elliptical Fourier Analysis...")
   # 'norm' controls whether descriptors are normalized to first harmonic (TRUE) or longest radius (FALSE)
   # Use start = TRUE to set a consistent phasing across shapes.
-  
-  # If normalization is enabled, we need to capture size/position info for reconstruction
-  shape_metadata <- NULL
-  if (norm) {
-    if (verbose) message("Extracting shape metadata for denormalization...")
-    # Extract centroid size and position for each shape before EFA normalization
-    shape_metadata <- list()
-    for (i in seq_along(normalized_shapes$coo)) {
-      coords <- normalized_shapes$coo[[i]]
-      # Calculate centroid
-      centroid <- colMeans(coords)
-      # Calculate size (mean distance from centroid)
-      size <- mean(sqrt(rowSums((coords - rep(centroid, each = nrow(coords)))^2)))
-      shape_metadata[[i]] <- list(
-        centroid = centroid,
-        size = size,
-        name = names(normalized_shapes$coo)[i]
-      )
-    }
-    if (verbose) message("  Captured metadata for ", length(shape_metadata), " shapes")
-  }
   
   efa_results <- .perform_efa(normalized_shapes, norm = norm, harmonics = harmonics, start = TRUE, verbose = verbose)
   
