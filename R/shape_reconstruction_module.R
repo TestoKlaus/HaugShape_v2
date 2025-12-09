@@ -391,14 +391,28 @@ shape_reconstruction_server <- function(id) {
       # pc_scores is [n_pcs] in SD units
       # We need: center [n_coefs] + (pc_scores [n_pcs] * sdev [n_pcs]) %*% t(rotation [n_coefs x n_pcs])
       
+      # Debug output
+      message("=== Shape Reconstruction Debug ===")
+      message("Input PC scores: ", paste(round(pc_scores, 3), collapse = ", "))
+      message("Number of PCs: ", n_pcs)
+      message("Number of coefficients: ", n_coefs)
+      message("Center length: ", length(model$center))
+      message("Rotation dims: ", paste(dim(model$rotation), collapse = " x "))
+      message("Sdev length: ", length(model$sdev))
+      
       # Scale PC scores by standard deviations
       scaled_scores <- pc_scores * model$sdev[1:length(pc_scores)]
+      message("Scaled scores: ", paste(round(scaled_scores, 3), collapse = ", "))
       
       # Transform back to coefficient space
       # t(rotation) is [n_pcs x n_coefs], scaled_scores is [n_pcs]
       # Result: [n_coefs]
       contribution <- as.vector(scaled_scores %*% t(model$rotation))
+      message("Contribution range: [", round(min(contribution), 3), ", ", round(max(contribution), 3), "]")
+      
       reconstructed_coefs <- model$center + contribution
+      message("Reconstructed coefs range: [", round(min(reconstructed_coefs), 3), ", ", round(max(reconstructed_coefs), 3), "]")
+      message("Center range: [", round(min(model$center), 3), ", ", round(max(model$center), 3), "]")
       
       # Verify coefficient length
       if (length(reconstructed_coefs) != n_coefs) {
@@ -434,13 +448,18 @@ shape_reconstruction_server <- function(id) {
         stop("Coefficient length is not divisible by 4 (invalid for EFA)")
       }
       n_harmonics <- as.integer(n_harmonics)
+      message("Number of harmonics: ", n_harmonics)
       
       # Use Momocs efourier_i with proper normalization
+      message("Attempting Momocs efourier_i reconstruction...")
       outline <- tryCatch({
-        Momocs::efourier_i(reconstructed_coe, nb.h = n_harmonics, nb.pts = 120)
+        result <- Momocs::efourier_i(reconstructed_coe, nb.h = n_harmonics, nb.pts = 120)
+        message("Momocs efourier_i succeeded")
+        result
       }, error = function(e) {
         # If Momocs fails, fall back to manual reconstruction
-        warning("Momocs efourier_i failed, using manual reconstruction: ", conditionMessage(e))
+        message("Momocs efourier_i failed: ", conditionMessage(e))
+        message("Falling back to manual reconstruction")
         NULL
       })
       
@@ -448,17 +467,22 @@ shape_reconstruction_server <- function(id) {
       if (!is.null(outline)) {
         if (inherits(outline, "Out") && !is.null(outline$coo)) {
           coords <- outline$coo[[1]]
+          message("Extracted coords from Out object: ", nrow(coords), " x ", ncol(coords))
         } else if (is.matrix(outline)) {
           coords <- outline
+          message("Using outline as matrix directly: ", nrow(coords), " x ", ncol(coords))
         } else if (is.list(outline) && !is.null(outline[[1]])) {
           coords <- outline[[1]]
+          message("Extracted coords from list: ", nrow(coords), " x ", ncol(coords))
         } else {
+          message("Outline format not recognized, triggering fallback")
           outline <- NULL  # Trigger fallback
         }
       }
       
       # Fallback: manual reconstruction if Momocs failed
       if (is.null(outline)) {
+        message("Using manual inverse Fourier transformation")
         nb_pts <- 120
         theta <- seq(0, 2 * pi, length.out = nb_pts + 1)[-(nb_pts + 1)]
         x <- numeric(nb_pts)
@@ -476,7 +500,12 @@ shape_reconstruction_server <- function(id) {
         }
         
         coords <- cbind(x, y)
+        message("Manual reconstruction complete: ", nrow(coords), " points")
+        message("X range: [", round(min(x), 3), ", ", round(max(x), 3), "]")
+        message("Y range: [", round(min(y), 3), ", ", round(max(y), 3), "]")
       }
+      
+      message("=== Reconstruction Complete ===\n")
       
       # Ensure coords is a matrix with 2 columns
       if (!is.matrix(coords) || ncol(coords) != 2) {
