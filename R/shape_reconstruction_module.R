@@ -424,15 +424,85 @@ shape_reconstruction_server <- function(id) {
       reconstructed_coe$coe <- matrix(reconstructed_coefs, nrow = 1)
       rownames(reconstructed_coe$coe) <- "reconstructed"
       
+      message("Building OutCoe object...")
+      message("Coe matrix: ", nrow(reconstructed_coe$coe), " x ", ncol(reconstructed_coe$coe))
+      
       # Copy all normalization attributes from the model
-      if (!is.null(model$efa_norm)) reconstructed_coe$norm <- model$efa_norm
-      if (!is.null(model$efa_r1)) reconstructed_coe$r1 <- model$efa_r1[1]  # Use first specimen's value
-      if (!is.null(model$efa_r2)) reconstructed_coe$r2 <- model$efa_r2[1]
-      if (!is.null(model$efa_baseline1)) reconstructed_coe$baseline1 <- model$efa_baseline1[1,]
-      if (!is.null(model$efa_baseline2)) reconstructed_coe$baseline2 <- model$efa_baseline2[1,]
-      if (!is.null(model$efa_lnef)) reconstructed_coe$lnef <- model$efa_lnef[1]
-      if (!is.null(model$efa_A1)) reconstructed_coe$A1 <- model$efa_A1[1]
-      if (!is.null(model$efa_mod)) reconstructed_coe$mod <- model$efa_mod[1,]
+      # For reconstruction, use mean values or first specimen's normalization
+      if (!is.null(model$efa_norm)) {
+        reconstructed_coe$norm <- model$efa_norm
+        message("Normalization flag: ", model$efa_norm)
+      }
+      
+      if (!is.null(model$efa_r1)) {
+        if (is.matrix(model$efa_r1) || length(model$efa_r1) > 1) {
+          reconstructed_coe$r1 <- mean(model$efa_r1, na.rm = TRUE)  # Use mean for reconstruction
+          message("r1 (mean): ", round(reconstructed_coe$r1, 3))
+        } else {
+          reconstructed_coe$r1 <- model$efa_r1[1]
+          message("r1: ", round(reconstructed_coe$r1, 3))
+        }
+      }
+      
+      if (!is.null(model$efa_r2)) {
+        if (is.matrix(model$efa_r2) || length(model$efa_r2) > 1) {
+          reconstructed_coe$r2 <- mean(model$efa_r2, na.rm = TRUE)
+          message("r2 (mean): ", round(reconstructed_coe$r2, 3))
+        } else {
+          reconstructed_coe$r2 <- model$efa_r2[1]
+          message("r2: ", round(reconstructed_coe$r2, 3))
+        }
+      }
+      
+      if (!is.null(model$efa_baseline1)) {
+        if (is.matrix(model$efa_baseline1)) {
+          reconstructed_coe$baseline1 <- colMeans(model$efa_baseline1, na.rm = TRUE)
+          message("baseline1 (mean): [", paste(round(reconstructed_coe$baseline1, 3), collapse = ", "), "]")
+        } else {
+          reconstructed_coe$baseline1 <- model$efa_baseline1
+          message("baseline1: [", paste(round(reconstructed_coe$baseline1, 3), collapse = ", "), "]")
+        }
+      }
+      
+      if (!is.null(model$efa_baseline2)) {
+        if (is.matrix(model$efa_baseline2)) {
+          reconstructed_coe$baseline2 <- colMeans(model$efa_baseline2, na.rm = TRUE)
+          message("baseline2 (mean): [", paste(round(reconstructed_coe$baseline2, 3), collapse = ", "), "]")
+        } else {
+          reconstructed_coe$baseline2 <- model$efa_baseline2
+          message("baseline2: [", paste(round(reconstructed_coe$baseline2, 3), collapse = ", "), "]")
+        }
+      }
+      
+      if (!is.null(model$efa_lnef)) {
+        if (is.matrix(model$efa_lnef) || length(model$efa_lnef) > 1) {
+          reconstructed_coe$lnef <- mean(model$efa_lnef, na.rm = TRUE)
+          message("lnef (mean): ", round(reconstructed_coe$lnef, 3))
+        } else {
+          reconstructed_coe$lnef <- model$efa_lnef[1]
+          message("lnef: ", round(reconstructed_coe$lnef, 3))
+        }
+      }
+      
+      if (!is.null(model$efa_A1)) {
+        if (is.matrix(model$efa_A1) || length(model$efa_A1) > 1) {
+          reconstructed_coe$A1 <- mean(model$efa_A1, na.rm = TRUE)
+          message("A1 (mean): ", round(reconstructed_coe$A1, 3))
+        } else {
+          reconstructed_coe$A1 <- model$efa_A1[1]
+          message("A1: ", round(reconstructed_coe$A1, 3))
+        }
+      }
+      
+      if (!is.null(model$efa_mod)) {
+        if (is.matrix(model$efa_mod)) {
+          reconstructed_coe$mod <- colMeans(model$efa_mod, na.rm = TRUE)
+          message("mod (mean): [", paste(round(reconstructed_coe$mod, 3), collapse = ", "), "]")
+        } else {
+          reconstructed_coe$mod <- model$efa_mod
+          message("mod: [", paste(round(reconstructed_coe$mod, 3), collapse = ", "), "]")
+        }
+      }
       
       # Set proper class and method
       class(reconstructed_coe) <- c("OutCoe", "Coe")
