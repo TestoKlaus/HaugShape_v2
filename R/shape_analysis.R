@@ -142,7 +142,7 @@ shape_analysis <- function(shape_dir,
   # Match manual script default: center = TRUE, scale. = FALSE (and keep fallback behavior if needed)
   # We'll directly run with scale.=FALSE to be consistent; robust fallback no longer needed.
   pca_results <- tryCatch({
-    Momocs::PCA(efa_results, center = TRUE, scale. = FALSE)
+    PCA(efa_results, center = TRUE, scale. = FALSE)
   }, error = function(e) {
     stop("Principal Component Analysis failed: ", conditionMessage(e), call. = FALSE)
   })
@@ -197,7 +197,7 @@ shape_analysis <- function(shape_dir,
       print(pc_plot)
     } else {
       max_pcs <- min(num_pcs, ncol(pca_results$x))
-      print(Momocs::PCcontrib(pca_results, nax = 1:max_pcs, sd.r = c(-2,-1,0,1,2)))
+      print(PCcontrib(pca_results, nax = 1:max_pcs, sd.r = c(-2,-1,0,1,2)))
     }
     grDevices::dev.off()
   }, error = function(e) {
@@ -354,7 +354,7 @@ shape_analysis <- function(shape_dir,
   
   # Import shapes
   tryCatch({
-    shapes <- Momocs::import_jpg(shape_files) %>% Momocs::Out()
+    shapes <- import_jpg(shape_files) %>% Out()
     if (verbose) message("Successfully imported ", length(shapes), " shapes")
     return(shapes)
   }, error = function(e) {
@@ -367,13 +367,13 @@ shape_analysis <- function(shape_dir,
 .normalize_shapes <- function(shapes, start_point, align_orientation, verbose) {
   tryCatch({
     normalized_shapes <- shapes %>%
-      Momocs::coo_center() %>%
-      Momocs::coo_scale()
+      coo_center() %>%
+      coo_scale()
     if (isTRUE(align_orientation)) {
-      normalized_shapes <- normalized_shapes %>% Momocs::coo_aligncalliper()
+      normalized_shapes <- normalized_shapes %>% coo_aligncalliper()
       if (verbose) message("Orientation aligned using major axis (caliper alignment)")
     }
-    normalized_shapes <- normalized_shapes %>% Momocs::coo_slidedirection(start_point)
+    normalized_shapes <- normalized_shapes %>% coo_slidedirection(start_point)
     
     if (verbose) message("Shapes normalized with start point: ", start_point)
     return(normalized_shapes)
@@ -390,7 +390,7 @@ shape_analysis <- function(shape_dir,
     args <- list(x = normalized_shapes, norm = norm)
     if (!is.null(harmonics)) args$nb.h <- harmonics
     if (!is.null(start)) args$start <- start
-    efa_results <- do.call(Momocs::efourier, args)
+    efa_results <- do.call(efourier, args)
     
     if (verbose) message("EFA completed with normalization: ", norm)
     return(efa_results)
@@ -401,7 +401,9 @@ shape_analysis <- function(shape_dir,
 
 #' Perform Principal Component Analysis
 #' @noRd
-# No longer used: PCA is invoked directly with scale. = FALSE to match manual pipeline
+.perform_pca <- function() {
+  # No longer used: PCA is invoked directly with scale. = FALSE to match manual pipeline
+}
 
 #' Extract PCA scores as data frame
 #' @noRd
@@ -613,7 +615,7 @@ shape_analysis <- function(shape_dir,
   tryCatch({
     # Ensure we don't request more PCs than available
     max_pcs <- min(num_pcs, ncol(pca_results$x))
-    Momocs::PCcontrib(pca_results, nax = 1:max_pcs, sd.r = c(-2, -1, 0, 1, 2))
+    PCcontrib(pca_results, nax = 1:max_pcs, sd.r = c(-2, -1, 0, 1, 2))
   }, error = function(e) {
     warning("Failed to create PC contribution plot: ", e$message)
     return(NULL)

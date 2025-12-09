@@ -238,7 +238,7 @@ shape_analysis_server <- function(id) {
         try(print(res$pc_contribution_plot), silent = TRUE)
       } else {
         max_pcs <- min(input$num_pcs, ncol(res$pca_results$x))
-        Momocs::PCcontrib(res$pca_results, nax = 1:max_pcs, sd.r = c(-2,-1,0,1,2))
+        PCcontrib(res$pca_results, nax = 1:max_pcs, sd.r = c(-2,-1,0,1,2))
       }
     })
 

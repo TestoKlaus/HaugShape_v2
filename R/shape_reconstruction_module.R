@@ -461,7 +461,7 @@ shape_reconstruction_server <- function(id) {
         # Use Momocs efourier_i - it will handle all denormalization automatically
         message("Attempting Momocs efourier_i with complete object...")
         outline <- tryCatch({
-          result <- Momocs::efourier_i(reconstructed_coe, nb.h = as.integer(n_harmonics), nb.pts = 120)
+          result <- efourier_i(reconstructed_coe, nb.h = as.integer(n_harmonics), nb.pts = 120)
           message("Momocs efourier_i succeeded!")
           result
         }, error = function(e) {

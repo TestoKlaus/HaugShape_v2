@@ -361,8 +361,8 @@ map_shapes_to_data <- function(data,
   
   tryCatch({
     # Import using Momocs
-    shape_data <- Momocs::import_jpg(file_path)
-    shape_out <- Momocs::Out(shape_data)
+    shape_data <- import_jpg(file_path)
+    shape_out <- Out(shape_data)
     
     # Validate if requested
     if (params$validate_shapes) {
