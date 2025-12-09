@@ -406,20 +406,36 @@ shape_reconstruction_server <- function(id) {
       if (!is.null(efa_obj$coe) && is.matrix(efa_obj$coe)) {
         # Copy structure and replace with our coefficients
         reconstructed_efa$coe <- matrix(reconstructed_coefs, nrow = 1)
-        colnames(reconstructed_efa$coe) <- colnames(efa_obj$coe)
+        
+        # Only set column names if original has them and lengths match
+        if (!is.null(colnames(efa_obj$coe)) && length(colnames(efa_obj$coe)) == ncol(reconstructed_efa$coe)) {
+          colnames(reconstructed_efa$coe) <- colnames(efa_obj$coe)
+        }
+        
         rownames(reconstructed_efa$coe) <- "reconstructed"
       } else {
         stop("EFA object does not contain valid coefficient matrix")
       }
       
-      # Copy other necessary attributes
+      # Copy other necessary attributes if they exist
       if (!is.null(efa_obj$norm)) reconstructed_efa$norm <- efa_obj$norm
       if (!is.null(efa_obj$baseline1)) reconstructed_efa$baseline1 <- efa_obj$baseline1
       if (!is.null(efa_obj$baseline2)) reconstructed_efa$baseline2 <- efa_obj$baseline2
       
+      # Preserve the method attribute
+      if (!is.null(attr(efa_obj, "method"))) {
+        attr(reconstructed_efa, "method") <- attr(efa_obj, "method")
+      }
+      
       # Use inverse Fourier to get outline coordinates
       # Determine number of harmonics from coefficient structure
       n_harmonics <- (ncol(reconstructed_efa$coe)) / 4  # EFA has 4 coefficients per harmonic (An, Bn, Cn, Dn)
+      
+      # Ensure n_harmonics is an integer
+      if (n_harmonics != as.integer(n_harmonics)) {
+        stop("Coefficient matrix has invalid dimensions for EFA (not divisible by 4)")
+      }
+      n_harmonics <- as.integer(n_harmonics)
       
       outline <- Momocs::efourier_i(reconstructed_efa, nb.h = n_harmonics, nb.pts = 120)
       
