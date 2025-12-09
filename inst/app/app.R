@@ -17,7 +17,10 @@ ui <- dashboardPage(
         menuSubItem("Complete Halved Shapes", tabName = "complete_shapes")
       ),
       menuItem("2. Morph Shapes",     tabName = "morph_shapes",     icon = icon("wand-magic-sparkles")),
-      menuItem("3. Shape Analysis",   tabName = "shape_analysis",   icon = icon("project-diagram")),
+      menuItem("3. Shape Analysis",   tabName = "shape_analysis",   icon = icon("project-diagram"),
+        menuSubItem("Run Analysis", tabName = "shape_analysis"),
+        menuSubItem("Reconstruct Shapes", tabName = "shape_reconstruction")
+      ),
       menuItem("4. Data Import",      tabName = "data_import",      icon = icon("table")),
       menuItem("5. Plotting",         tabName = "plotting",         icon = icon("chart-line")),
       menuItem("6. Overview",         tabName = "overview",         icon = icon("th-large"))
@@ -29,6 +32,7 @@ ui <- dashboardPage(
   tabItem(tabName = "complete_shapes",  HaugShapeV2::complete_shapes_ui("cs")),
   tabItem(tabName = "morph_shapes",     HaugShapeV2::morph_shapes_ui("ms")),
   tabItem(tabName = "shape_analysis",   HaugShapeV2::shape_analysis_ui("sa")),
+  tabItem(tabName = "shape_reconstruction", HaugShapeV2::shape_reconstruction_ui("sr")),
   tabItem(tabName = "data_import",      HaugShapeV2::data_import_ui("di")),
   tabItem(tabName = "plotting",         HaugShapeV2::plotting_ui("pl")),
   tabItem(tabName = "overview",         HaugShapeV2::overview_ui("ov"))
@@ -42,6 +46,7 @@ server <- function(input, output, session) {
   HaugShapeV2::complete_shapes_server("cs")
   HaugShapeV2::morph_shapes_server("ms")
   HaugShapeV2::shape_analysis_server("sa")
+  HaugShapeV2::shape_reconstruction_server("sr")
 
   # Data Import provides data for plotting
   imported <- HaugShapeV2::data_import_server("di")  # list with $data reactive

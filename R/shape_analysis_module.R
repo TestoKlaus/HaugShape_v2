@@ -213,7 +213,16 @@ shape_analysis_server <- function(id) {
     output$run_meta <- renderUI({
       res <- results(); req(res)
       tags$div(
-        tags$p(sprintf("Analyzed %d shapes. Output: %s", res$metadata$n_shapes, res$output_path))
+        tags$p(sprintf("Analyzed %d shapes.", res$metadata$n_shapes)),
+        tags$h5("Output Files:"),
+        tags$ul(
+          tags$li(tags$strong("PCA Scores: "), tags$code(basename(res$output_path))),
+          tags$li(tags$strong("Summary: "), tags$code(basename(res$summary_txt_path))),
+          tags$li(tags$strong("PC Plot: "), tags$code(basename(res$pc_plot_jpg_path))),
+          tags$li(tags$strong("Reconstruction Model: "), tags$code(basename(res$reconstruction_model_path))),
+          tags$li(tags$strong("Reconstruction Info: "), tags$code(basename(res$reconstruction_info_path)))
+        ),
+        tags$p(tags$em("All files saved to: ", dirname(res$output_path)))
       )
     })
 

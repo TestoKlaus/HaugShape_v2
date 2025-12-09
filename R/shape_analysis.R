@@ -24,11 +24,14 @@
 #' @return A list containing:
 #'   \describe{
 #'     \item{pca_results}{The PCA object from Momocs}
+#'     \item{efa_results}{The EFA coefficients object from Momocs}
 #'     \item{scores}{Data frame of PCA scores}
 #'     \item{summary}{Character string of PCA summary}
 #'     \item{output_path}{Path where Excel results were saved}
 #'     \item{summary_txt_path}{Path to saved PCA summary .txt file}
 #'     \item{pc_plot_jpg_path}{Path to saved PC contributions .jpg}
+#'     \item{reconstruction_model_path}{Path to RDS file containing reconstruction model}
+#'     \item{reconstruction_info_path}{Path to text file with reconstruction info}
 #'     \item{metadata}{List of analysis metadata (n_shapes, harmonics, etc.)}
 #'   }
 #'
@@ -121,6 +124,9 @@ shape_analysis <- function(shape_dir,
     stop("Principal Component Analysis failed: ", conditionMessage(e), call. = FALSE)
   })
   
+  # Store efa_results for reconstruction (keeping reference before any cleanup)
+  efa_results_stored <- efa_results
+  
   # Extract and format results ----
   if (verbose) message("Extracting PCA scores...")
   scores <- .extract_pca_scores(pca_results)
@@ -164,6 +170,22 @@ shape_analysis <- function(shape_dir,
     warning("Failed to save PC contribution plot JPG: ", conditionMessage(e))
   })
   
+  # Save reconstruction data ----
+  reconstruction_model_path <- file.path(output_dir, paste0(output_stem, "_reconstruction_model.rds"))
+  reconstruction_info_path <- file.path(output_dir, paste0(output_stem, "_reconstruction_info.txt"))
+  
+  if (verbose) message("Saving reconstruction model data...")
+  .save_reconstruction_data(
+    pca_results = pca_results,
+    efa_results = efa_results_stored,
+    norm = norm,
+    harmonics = harmonics,
+    start_point = start_point,
+    model_path = reconstruction_model_path,
+    info_path = reconstruction_info_path,
+    verbose = verbose
+  )
+  
   # Prepare metadata
   metadata <- list(
     n_shapes = length(shapes),
@@ -180,11 +202,14 @@ shape_analysis <- function(shape_dir,
   structure(
     list(
       pca_results = pca_results,
+      efa_results = efa_results_stored,
       scores = scores,
       summary = analysis_summary,
       output_path = output_file_path,
       summary_txt_path = summary_txt_path,
       pc_plot_jpg_path = pc_plot_jpg_path,
+      reconstruction_model_path = reconstruction_model_path,
+      reconstruction_info_path = reconstruction_info_path,
       metadata = metadata,
       pc_contribution_plot = pc_plot
     ),
@@ -365,6 +390,171 @@ shape_analysis <- function(shape_dir,
   })
 }
 
+#' Save reconstruction data for shape reconstruction
+#' @noRd
+.save_reconstruction_data <- function(pca_results, efa_results, norm, harmonics, 
+                                     start_point, model_path, info_path, verbose) {
+  
+  # Extract reconstruction components from PCA
+  reconstruction_model <- list(
+    # PCA components
+    rotation = pca_results$rotation,      # Eigenvectors (loadings)
+    center = pca_results$center,          # Centering values
+    sdev = pca_results$sdev,              # Standard deviations
+    
+    # EFA results (full object for complete reconstruction)
+    efa_results = efa_results,
+    
+    # Analysis parameters
+    parameters = list(
+      norm = norm,
+      harmonics = if (is.null(harmonics)) "automatic" else harmonics,
+      start_point = start_point,
+      n_components = ncol(pca_results$x),
+      n_specimens = nrow(pca_results$x)
+    ),
+    
+    # Variance explained
+    variance_explained = if (!is.null(pca_results$eig)) {
+      pca_results$eig / sum(pca_results$eig) * 100
+    } else {
+      NULL
+    },
+    
+    # Metadata for version control and validation
+    metadata = list(
+      format_version = "1.0",
+      created_date = Sys.time(),
+      momocs_version = tryCatch(as.character(packageVersion("Momocs")), error = function(e) "unknown"),
+      r_version = R.version.string
+    )
+  )
+  
+  # Save as RDS (binary, preserves R objects exactly)
+  tryCatch({
+    saveRDS(reconstruction_model, file = model_path)
+    if (verbose) message("  Reconstruction model saved: ", basename(model_path))
+  }, error = function(e) {
+    warning("Failed to save reconstruction model RDS: ", e$message)
+  })
+  
+  # Create human-readable text summary
+  info_lines <- c(
+    "Shape Reconstruction Model Information",
+    "======================================",
+    "",
+    "Created:", format(reconstruction_model$metadata$created_date),
+    "Format Version:", reconstruction_model$metadata$format_version,
+    "Momocs Version:", reconstruction_model$metadata$momocs_version,
+    "R Version:", reconstruction_model$metadata$r_version,
+    "",
+    "Analysis Parameters:",
+    "--------------------",
+    paste("  Normalization:", reconstruction_model$parameters$norm),
+    paste("  Harmonics:", reconstruction_model$parameters$harmonics),
+    paste("  Start Point:", reconstruction_model$parameters$start_point),
+    paste("  Number of Specimens:", reconstruction_model$parameters$n_specimens),
+    paste("  Number of PCs:", reconstruction_model$parameters$n_components),
+    "",
+    "Reconstruction Components:",
+    "-------------------------",
+    paste("  Eigenvectors (rotation):", nrow(reconstruction_model$rotation), "x", ncol(reconstruction_model$rotation)),
+    paste("  Center vector length:", length(reconstruction_model$center)),
+    paste("  Standard deviations:", length(reconstruction_model$sdev)),
+    "",
+    "Variance Explained by PC:",
+    "------------------------"
+  )
+  
+  # Add variance explained for first 10 PCs
+  if (!is.null(reconstruction_model$variance_explained)) {
+    n_show <- min(10, length(reconstruction_model$variance_explained))
+    for (i in 1:n_show) {
+      info_lines <- c(info_lines, sprintf("  PC%d: %.2f%%", i, reconstruction_model$variance_explained[i]))
+    }
+    cumsum_var <- cumsum(reconstruction_model$variance_explained)
+    info_lines <- c(info_lines, "", 
+                   sprintf("  Cumulative variance (first 10 PCs): %.2f%%", cumsum_var[min(10, length(cumsum_var))]))
+  }
+  
+  info_lines <- c(info_lines, "",
+    "Usage:",
+    "------",
+    "To load this reconstruction model in R:",
+    "  model <- load_reconstruction_model('" %+% basename(model_path) %+% "')",
+    "",
+    "To reconstruct shapes from PC scores:",
+    "  reconstructed_shape <- reconstruct_shape_from_pca(",
+    "    reconstruction_model = model,",
+    "    pc_scores = c(PC1 = 2.0, PC2 = -1.5, ...)",
+    "  )"
+  )
+  
+  # Define simple string concatenation operator for cleaner code
+  `%+%` <- function(a, b) paste0(a, b)
+  
+  # Recreate info_lines with proper concatenation
+  info_lines <- c(
+    "Shape Reconstruction Model Information",
+    "======================================",
+    "",
+    paste("Created:", format(reconstruction_model$metadata$created_date)),
+    paste("Format Version:", reconstruction_model$metadata$format_version),
+    paste("Momocs Version:", reconstruction_model$metadata$momocs_version),
+    paste("R Version:", reconstruction_model$metadata$r_version),
+    "",
+    "Analysis Parameters:",
+    "--------------------",
+    paste("  Normalization:", reconstruction_model$parameters$norm),
+    paste("  Harmonics:", reconstruction_model$parameters$harmonics),
+    paste("  Start Point:", reconstruction_model$parameters$start_point),
+    paste("  Number of Specimens:", reconstruction_model$parameters$n_specimens),
+    paste("  Number of PCs:", reconstruction_model$parameters$n_components),
+    "",
+    "Reconstruction Components:",
+    "-------------------------",
+    paste("  Eigenvectors (rotation):", nrow(reconstruction_model$rotation), "x", ncol(reconstruction_model$rotation)),
+    paste("  Center vector length:", length(reconstruction_model$center)),
+    paste("  Standard deviations:", length(reconstruction_model$sdev)),
+    "",
+    "Variance Explained by PC:",
+    "------------------------"
+  )
+  
+  if (!is.null(reconstruction_model$variance_explained)) {
+    n_show <- min(10, length(reconstruction_model$variance_explained))
+    for (i in 1:n_show) {
+      info_lines <- c(info_lines, sprintf("  PC%d: %.2f%%", i, reconstruction_model$variance_explained[i]))
+    }
+    cumsum_var <- cumsum(reconstruction_model$variance_explained)
+    info_lines <- c(info_lines, "", 
+                   sprintf("  Cumulative variance (first 10 PCs): %.2f%%", cumsum_var[min(10, length(cumsum_var))]))
+  }
+  
+  info_lines <- c(info_lines, "",
+    "Usage:",
+    "------",
+    "To load this reconstruction model in R:",
+    paste0("  model <- load_reconstruction_model('", basename(model_path), "')"),
+    "",
+    "To reconstruct shapes from PC scores:",
+    "  reconstructed_shape <- reconstruct_shape_from_pca(",
+    "    reconstruction_model = model,",
+    "    pc_scores = c(PC1 = 2.0, PC2 = -1.5, ...)",
+    "  )"
+  )
+  
+  # Save text file
+  tryCatch({
+    writeLines(info_lines, con = info_path, useBytes = TRUE)
+    if (verbose) message("  Reconstruction info saved: ", basename(info_path))
+  }, error = function(e) {
+    warning("Failed to save reconstruction info text: ", e$message)
+  })
+  
+  invisible(TRUE)
+}
+
 #' Generate PCA summary
 #' @noRd
 .generate_pca_summary <- function(pca_results) {
@@ -404,8 +594,152 @@ print.shape_analysis_result <- function(x, ...) {
   cat("  Harmonics:", x$metadata$n_harmonics, "\n")
   cat("  Normalization:", x$metadata$normalization, "\n")
   cat("  Start point:", x$metadata$start_point, "\n")
-  cat("  Analysis date:", format(x$metadata$analysis_date), "\n")
-  cat("  Output saved to:", x$output_path, "\n\n")
+  cat("  Analysis date:", format(x$metadata$analysis_date), "\n\n")
+  
+  cat("Output files:\n")
+  cat("  PCA scores:", x$output_path, "\n")
+  cat("  Summary:", x$summary_txt_path, "\n")
+  cat("  PC plot:", x$pc_plot_jpg_path, "\n")
+  cat("  Reconstruction model:", x$reconstruction_model_path, "\n")
+  cat("  Reconstruction info:", x$reconstruction_info_path, "\n\n")
+  
   cat("PCA Summary:\n")
   cat(x$summary, "\n")
+}
+
+# Reconstruction Model Loader ----
+
+#' Load Shape Reconstruction Model
+#'
+#' Loads a reconstruction model saved by `shape_analysis()` that contains all the
+#' data needed to reconstruct shapes from PC scores: eigenvectors, EFA coefficients,
+#' and analysis parameters.
+#'
+#' @param model_path Character string specifying the path to the reconstruction model
+#'   RDS file (typically named `*_reconstruction_model.rds`).
+#' @param validate Logical indicating whether to validate the model structure. Default: TRUE.
+#' @param verbose Logical indicating whether to print loading messages. Default: TRUE.
+#'
+#' @return A list containing:
+#'   \describe{
+#'     \item{rotation}{Matrix of eigenvectors (loadings) from PCA}
+#'     \item{center}{Centering vector from PCA}
+#'     \item{sdev}{Standard deviations from PCA}
+#'     \item{efa_results}{EFA coefficients object from Momocs}
+#'     \item{parameters}{List of analysis parameters (norm, harmonics, start_point, etc.)}
+#'     \item{variance_explained}{Vector of variance explained by each PC}
+#'     \item{metadata}{Metadata about model creation (version, date, etc.)}
+#'   }
+#'
+#' @details
+#' This function loads reconstruction models created by `shape_analysis()`. The model
+#' contains all necessary information to reconstruct shapes from principal component scores:
+#' 
+#' - **PCA components**: Eigenvectors (rotation matrix), centering values, and standard deviations
+#' - **EFA results**: Full Elliptical Fourier Analysis object with coefficients
+#' - **Parameters**: Analysis settings used (normalization, harmonics, start point)
+#' - **Metadata**: Version info and creation timestamp
+#'
+#' The loaded model can be used with shape reconstruction functions to generate
+#' contours from PC scores.
+#'
+#' @examples
+#' \dontrun{
+#' # Load a reconstruction model
+#' model <- load_reconstruction_model("shape_analysis_reconstruction_model.rds")
+#'
+#' # Check model information
+#' print(model$parameters)
+#' print(model$metadata)
+#'
+#' # Use with reconstruction function (when implemented)
+#' # reconstructed <- reconstruct_shape_from_pca(model, pc_scores = c(PC1 = 2.0, PC2 = -1.5))
+#' }
+#'
+#' @export
+load_reconstruction_model <- function(model_path, validate = TRUE, verbose = TRUE) {
+  
+  # Input validation ----
+  if (!is.character(model_path) || length(model_path) != 1 || !nzchar(model_path)) {
+    stop("'model_path' must be a non-empty character string", call. = FALSE)
+  }
+  
+  if (!file.exists(model_path)) {
+    stop("Reconstruction model file does not exist: ", model_path, call. = FALSE)
+  }
+  
+  if (!is.logical(validate) || length(validate) != 1) {
+    stop("'validate' must be a single logical value", call. = FALSE)
+  }
+  
+  if (!is.logical(verbose) || length(verbose) != 1) {
+    stop("'verbose' must be a single logical value", call. = FALSE)
+  }
+  
+  # Load model ----
+  if (verbose) message("Loading reconstruction model from: ", model_path)
+  
+  model <- tryCatch({
+    readRDS(model_path)
+  }, error = function(e) {
+    stop("Failed to load reconstruction model: ", e$message, call. = FALSE)
+  })
+  
+  # Validate model structure ----
+  if (validate) {
+    if (verbose) message("Validating model structure...")
+    
+    required_components <- c("rotation", "center", "sdev", "efa_results", "parameters", "metadata")
+    missing_components <- setdiff(required_components, names(model))
+    
+    if (length(missing_components) > 0) {
+      stop("Reconstruction model is missing required components: ",
+           paste(missing_components, collapse = ", "), call. = FALSE)
+    }
+    
+    # Check metadata version
+    if (!is.null(model$metadata$format_version)) {
+      if (verbose) {
+        message("Model format version: ", model$metadata$format_version)
+        message("Created: ", format(model$metadata$created_date))
+      }
+      
+      # Future version compatibility checks can go here
+      supported_versions <- c("1.0")
+      if (!model$metadata$format_version %in% supported_versions) {
+        warning("Reconstruction model format version ", model$metadata$format_version,
+                " may not be fully supported. Supported versions: ",
+                paste(supported_versions, collapse = ", "))
+      }
+    }
+    
+    # Check parameter structure
+    required_params <- c("norm", "harmonics", "start_point", "n_components", "n_specimens")
+    missing_params <- setdiff(required_params, names(model$parameters))
+    
+    if (length(missing_params) > 0) {
+      warning("Model parameters missing: ", paste(missing_params, collapse = ", "))
+    }
+    
+    # Check dimensions consistency
+    if (!is.null(model$rotation) && !is.null(model$center)) {
+      if (nrow(model$rotation) != length(model$center)) {
+        warning("Dimension mismatch: rotation matrix rows (", nrow(model$rotation),
+                ") != center vector length (", length(model$center), ")")
+      }
+    }
+    
+    if (verbose) {
+      message("Model validation passed")
+      message("  Specimens: ", model$parameters$n_specimens)
+      message("  PCs: ", model$parameters$n_components)
+      message("  Harmonics: ", model$parameters$harmonics)
+      message("  Normalization: ", model$parameters$norm)
+    }
+  }
+  
+  # Return model
+  if (verbose) message("Reconstruction model loaded successfully")
+  
+  return(model)
 }
