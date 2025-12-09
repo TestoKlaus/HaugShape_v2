@@ -384,13 +384,21 @@ shape_reconstruction_server <- function(id) {
       }
       
       # Reconstruct Fourier coefficients
-      # Formula: fourier_coefs = center + (pc_scores × rotation matrix)
-      # rotation is [n_coefs x n_pcs], pc_scores is [n_pcs]
-      # Result should be [n_coefs]
-      # Note: center already represents the mean shape in coefficient space
-      pc_matrix <- matrix(pc_scores, nrow = 1)  # Make it a row vector [1 x n_pcs]
-      contribution <- pc_matrix %*% t(model$rotation)  # [1 x n_pcs] × [n_pcs x n_coefs] = [1 x n_coefs]
-      reconstructed_coefs <- model$center + as.vector(contribution)
+      # PCA formula: X_reconstructed = center + scores %*% t(rotation)
+      # But scores are typically in SD units, so we need to scale them
+      # Standard PCA reconstruction: X = center + (scores * sdev) %*% t(rotation)
+      # rotation matrix has eigenvectors as COLUMNS [n_coefs x n_pcs]
+      # pc_scores is [n_pcs] in SD units
+      # We need: center [n_coefs] + (pc_scores [n_pcs] * sdev [n_pcs]) %*% t(rotation [n_coefs x n_pcs])
+      
+      # Scale PC scores by standard deviations
+      scaled_scores <- pc_scores * model$sdev[1:length(pc_scores)]
+      
+      # Transform back to coefficient space
+      # t(rotation) is [n_pcs x n_coefs], scaled_scores is [n_pcs]
+      # Result: [n_coefs]
+      contribution <- as.vector(scaled_scores %*% t(model$rotation))
+      reconstructed_coefs <- model$center + contribution
       
       # Verify coefficient length
       if (length(reconstructed_coefs) != n_coefs) {
