@@ -402,12 +402,19 @@ shape_analysis <- function(shape_dir,
     center = pca_results$center,          # Centering values
     sdev = pca_results$sdev,              # Standard deviations
     
-    # EFA results - save the essential components
+    # EFA results - save the essential components AND the original object for proper reconstruction
     efa_coe = efa_results$coe,            # Coefficient matrix
-    efa_method = attr(efa_results, "method"),  # Method attribute
     efa_norm = if (!is.null(efa_results$norm)) efa_results$norm else NULL,
+    efa_method = attr(efa_results, "method"),  # Method attribute
+    
+    # Store normalization info that efourier_i needs
+    efa_r1 = if (!is.null(efa_results$r1)) efa_results$r1 else NULL,
+    efa_r2 = if (!is.null(efa_results$r2)) efa_results$r2 else NULL,
     efa_baseline1 = if (!is.null(efa_results$baseline1)) efa_results$baseline1 else NULL,
     efa_baseline2 = if (!is.null(efa_results$baseline2)) efa_results$baseline2 else NULL,
+    efa_lnef = if (!is.null(efa_results$lnef)) efa_results$lnef else NULL,
+    efa_A1 = if (!is.null(efa_results$A1)) efa_results$A1 else NULL,
+    efa_mod = if (!is.null(efa_results$mod)) efa_results$mod else NULL,
     
     # Analysis parameters
     parameters = list(

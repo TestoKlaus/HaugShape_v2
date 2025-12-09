@@ -387,6 +387,7 @@ shape_reconstruction_server <- function(id) {
       # Formula: fourier_coefs = center + (pc_scores × rotation matrix)
       # rotation is [n_coefs x n_pcs], pc_scores is [n_pcs]
       # Result should be [n_coefs]
+      # Note: center already represents the mean shape in coefficient space
       pc_matrix <- matrix(pc_scores, nrow = 1)  # Make it a row vector [1 x n_pcs]
       contribution <- pc_matrix %*% t(model$rotation)  # [1 x n_pcs] × [n_pcs x n_coefs] = [1 x n_coefs]
       reconstructed_coefs <- model$center + as.vector(contribution)
@@ -396,40 +397,78 @@ shape_reconstruction_server <- function(id) {
         stop("Coefficient length mismatch: ", length(reconstructed_coefs), " vs ", n_coefs)
       }
       
-      # Determine number of harmonics from coefficient structure
-      # EFA has 4 coefficients per harmonic (An, Bn, Cn, Dn)
-      n_harmonics <- n_coefs / 4
+      # Build a proper Coe object for Momocs efourier_i
+      reconstructed_coe <- list()
+      reconstructed_coe$coe <- matrix(reconstructed_coefs, nrow = 1)
+      rownames(reconstructed_coe$coe) <- "reconstructed"
       
+      # Copy all normalization attributes from the model
+      if (!is.null(model$efa_norm)) reconstructed_coe$norm <- model$efa_norm
+      if (!is.null(model$efa_r1)) reconstructed_coe$r1 <- model$efa_r1[1]  # Use first specimen's value
+      if (!is.null(model$efa_r2)) reconstructed_coe$r2 <- model$efa_r2[1]
+      if (!is.null(model$efa_baseline1)) reconstructed_coe$baseline1 <- model$efa_baseline1[1,]
+      if (!is.null(model$efa_baseline2)) reconstructed_coe$baseline2 <- model$efa_baseline2[1,]
+      if (!is.null(model$efa_lnef)) reconstructed_coe$lnef <- model$efa_lnef[1]
+      if (!is.null(model$efa_A1)) reconstructed_coe$A1 <- model$efa_A1[1]
+      if (!is.null(model$efa_mod)) reconstructed_coe$mod <- model$efa_mod[1,]
+      
+      # Set proper class and method
+      class(reconstructed_coe) <- c("OutCoe", "Coe")
+      if (!is.null(model$efa_method)) {
+        attr(reconstructed_coe, "method") <- model$efa_method
+      } else {
+        attr(reconstructed_coe, "method") <- "efourier"
+      }
+      
+      # Determine number of harmonics
+      n_harmonics <- ncol(reconstructed_coe$coe) / 4
       if (n_harmonics != as.integer(n_harmonics)) {
         stop("Coefficient length is not divisible by 4 (invalid for EFA)")
       }
       n_harmonics <- as.integer(n_harmonics)
       
-      # Reconstruct outline directly from Fourier coefficients
-      # Instead of using efourier_i, manually compute the inverse Fourier transform
-      nb_pts <- 120
-      theta <- seq(0, 2 * pi, length.out = nb_pts + 1)[-(nb_pts + 1)]
+      # Use Momocs efourier_i with proper normalization
+      outline <- tryCatch({
+        Momocs::efourier_i(reconstructed_coe, nb.h = n_harmonics, nb.pts = 120)
+      }, error = function(e) {
+        # If Momocs fails, fall back to manual reconstruction
+        warning("Momocs efourier_i failed, using manual reconstruction: ", conditionMessage(e))
+        NULL
+      })
       
-      # Initialize coordinates
-      x <- numeric(nb_pts)
-      y <- numeric(nb_pts)
-      
-      # Apply inverse Fourier transformation
-      # For each harmonic, add its contribution
-      for (h in 1:n_harmonics) {
-        idx <- (h - 1) * 4 + 1:4  # Get An, Bn, Cn, Dn for this harmonic
-        An <- reconstructed_coefs[idx[1]]
-        Bn <- reconstructed_coefs[idx[2]]
-        Cn <- reconstructed_coefs[idx[3]]
-        Dn <- reconstructed_coefs[idx[4]]
-        
-        # Add contribution of this harmonic to the outline
-        x <- x + An * cos(h * theta) + Bn * sin(h * theta)
-        y <- y + Cn * cos(h * theta) + Dn * sin(h * theta)
+      # Extract coordinates
+      if (!is.null(outline)) {
+        if (inherits(outline, "Out") && !is.null(outline$coo)) {
+          coords <- outline$coo[[1]]
+        } else if (is.matrix(outline)) {
+          coords <- outline
+        } else if (is.list(outline) && !is.null(outline[[1]])) {
+          coords <- outline[[1]]
+        } else {
+          outline <- NULL  # Trigger fallback
+        }
       }
       
-      # Combine into coordinate matrix
-      coords <- cbind(x, y)
+      # Fallback: manual reconstruction if Momocs failed
+      if (is.null(outline)) {
+        nb_pts <- 120
+        theta <- seq(0, 2 * pi, length.out = nb_pts + 1)[-(nb_pts + 1)]
+        x <- numeric(nb_pts)
+        y <- numeric(nb_pts)
+        
+        for (h in 1:n_harmonics) {
+          idx <- (h - 1) * 4 + 1:4
+          An <- reconstructed_coefs[idx[1]]
+          Bn <- reconstructed_coefs[idx[2]]
+          Cn <- reconstructed_coefs[idx[3]]
+          Dn <- reconstructed_coefs[idx[4]]
+          
+          x <- x + An * cos(h * theta) + Bn * sin(h * theta)
+          y <- y + Cn * cos(h * theta) + Dn * sin(h * theta)
+        }
+        
+        coords <- cbind(x, y)
+      }
       
       # Ensure coords is a matrix with 2 columns
       if (!is.matrix(coords) || ncol(coords) != 2) {
