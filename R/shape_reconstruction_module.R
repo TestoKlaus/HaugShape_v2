@@ -441,148 +441,55 @@ shape_reconstruction_server <- function(id) {
         stop("Coefficient length mismatch: ", length(reconstructed_coefs), " vs ", n_coefs)
       }
       
-      # Build a proper Coe object for Momocs efourier_i
-      reconstructed_coe <- list()
-      reconstructed_coe$coe <- matrix(reconstructed_coefs, nrow = 1)
-      rownames(reconstructed_coe$coe) <- "reconstructed"
-      
-      message("Building OutCoe object...")
-      message("Coe matrix: ", nrow(reconstructed_coe$coe), " x ", ncol(reconstructed_coe$coe))
-      
-      # Copy all normalization attributes from the model
-      # For reconstruction, use mean values or first specimen's normalization
-      if (!is.null(model$efa_norm)) {
-        reconstructed_coe$norm <- model$efa_norm
-        message("Normalization flag: ", model$efa_norm)
-      }
-      
-      if (!is.null(model$efa_r1)) {
-        if (is.matrix(model$efa_r1) || length(model$efa_r1) > 1) {
-          reconstructed_coe$r1 <- mean(model$efa_r1, na.rm = TRUE)  # Use mean for reconstruction
-          message("r1 (mean): ", round(reconstructed_coe$r1, 3))
-        } else {
-          reconstructed_coe$r1 <- model$efa_r1[1]
-          message("r1: ", round(reconstructed_coe$r1, 3))
+      # SIMPLIFIED APPROACH: Use the complete EFA object from the model
+      # This preserves all Momocs internal structure and attributes
+      if (!is.null(model$efa_object)) {
+        message("Using complete EFA object for reconstruction")
+        
+        # Create a copy of the first specimen's EFA object structure
+        reconstructed_coe <- model$efa_object
+        
+        # Replace ONLY the coefficients with our reconstructed values
+        # Keep everything else (normalization params, class, attributes, etc.)
+        reconstructed_coe$coe <- matrix(reconstructed_coefs, nrow = 1)
+        rownames(reconstructed_coe$coe) <- "reconstructed"
+        
+        # Determine number of harmonics
+        n_harmonics <- ncol(reconstructed_coe$coe) / 4
+        message("Number of harmonics: ", n_harmonics)
+        
+        # Use Momocs efourier_i - it will handle all denormalization automatically
+        message("Attempting Momocs efourier_i with complete object...")
+        outline <- tryCatch({
+          result <- Momocs::efourier_i(reconstructed_coe, nb.h = as.integer(n_harmonics), nb.pts = 120)
+          message("Momocs efourier_i succeeded!")
+          result
+        }, error = function(e) {
+          message("Momocs efourier_i failed: ", conditionMessage(e))
+          NULL
+        })
+        
+        # Extract coordinates
+        if (!is.null(outline)) {
+          if (inherits(outline, "Out") && !is.null(outline$coo)) {
+            coords <- outline$coo[[1]]
+            message("Extracted coords from Out object: ", nrow(coords), " x ", ncol(coords))
+          } else if (is.matrix(outline)) {
+            coords <- outline
+            message("Using outline as matrix directly: ", nrow(coords), " x ", ncol(coords))
+          } else if (is.list(outline) && !is.null(outline[[1]])) {
+            coords <- outline[[1]]
+            message("Extracted coords from list: ", nrow(coords), " x ", ncol(coords))
+          } else {
+            message("Outline format not recognized")
+            outline <- NULL
+          }
         }
-      }
-      
-      if (!is.null(model$efa_r2)) {
-        if (is.matrix(model$efa_r2) || length(model$efa_r2) > 1) {
-          reconstructed_coe$r2 <- mean(model$efa_r2, na.rm = TRUE)
-          message("r2 (mean): ", round(reconstructed_coe$r2, 3))
-        } else {
-          reconstructed_coe$r2 <- model$efa_r2[1]
-          message("r2: ", round(reconstructed_coe$r2, 3))
-        }
-      }
-      
-      if (!is.null(model$efa_baseline1)) {
-        if (is.matrix(model$efa_baseline1)) {
-          reconstructed_coe$baseline1 <- colMeans(model$efa_baseline1, na.rm = TRUE)
-          message("baseline1 (mean): [", paste(round(reconstructed_coe$baseline1, 3), collapse = ", "), "]")
-        } else {
-          reconstructed_coe$baseline1 <- model$efa_baseline1
-          message("baseline1: [", paste(round(reconstructed_coe$baseline1, 3), collapse = ", "), "]")
-        }
-      }
-      
-      if (!is.null(model$efa_baseline2)) {
-        if (is.matrix(model$efa_baseline2)) {
-          reconstructed_coe$baseline2 <- colMeans(model$efa_baseline2, na.rm = TRUE)
-          message("baseline2 (mean): [", paste(round(reconstructed_coe$baseline2, 3), collapse = ", "), "]")
-        } else {
-          reconstructed_coe$baseline2 <- model$efa_baseline2
-          message("baseline2: [", paste(round(reconstructed_coe$baseline2, 3), collapse = ", "), "]")
-        }
-      }
-      
-      if (!is.null(model$efa_lnef)) {
-        if (is.matrix(model$efa_lnef) || length(model$efa_lnef) > 1) {
-          reconstructed_coe$lnef <- mean(model$efa_lnef, na.rm = TRUE)
-          message("lnef (mean): ", round(reconstructed_coe$lnef, 3))
-        } else {
-          reconstructed_coe$lnef <- model$efa_lnef[1]
-          message("lnef: ", round(reconstructed_coe$lnef, 3))
-        }
-      }
-      
-      if (!is.null(model$efa_A1)) {
-        if (is.matrix(model$efa_A1) || length(model$efa_A1) > 1) {
-          reconstructed_coe$A1 <- mean(model$efa_A1, na.rm = TRUE)
-          message("A1 (mean): ", round(reconstructed_coe$A1, 3))
-        } else {
-          reconstructed_coe$A1 <- model$efa_A1[1]
-          message("A1: ", round(reconstructed_coe$A1, 3))
-        }
-      }
-      
-      if (!is.null(model$efa_mod)) {
-        if (is.matrix(model$efa_mod)) {
-          reconstructed_coe$mod <- colMeans(model$efa_mod, na.rm = TRUE)
-          message("mod (mean): [", paste(round(reconstructed_coe$mod, 3), collapse = ", "), "]")
-        } else {
-          reconstructed_coe$mod <- model$efa_mod
-          message("mod: [", paste(round(reconstructed_coe$mod, 3), collapse = ", "), "]")
-        }
-      }
-      
-      # Set proper class and method
-      class(reconstructed_coe) <- c("OutCoe", "Coe")
-      if (!is.null(model$efa_method)) {
-        attr(reconstructed_coe, "method") <- model$efa_method
-        message("Method attribute: ", model$efa_method)
+        
       } else {
-        # If method is NULL, assume efourier since that's what we're using
-        attr(reconstructed_coe, "method") <- "efourier"
-        message("Method attribute not in model, defaulting to: efourier")
-      }
-      
-      # CRITICAL: Check if we have normalization parameters
-      has_norm_params <- !is.null(reconstructed_coe$norm) && reconstructed_coe$norm == TRUE &&
-                         !is.null(reconstructed_coe$r1) && !is.null(reconstructed_coe$r2)
-      
-      if (has_norm_params) {
-        message("Has normalization parameters - shape will be denormalized")
-      } else {
-        message("No normalization parameters - shape will remain in coefficient space")
-      }
-      
-      # Determine number of harmonics
-      n_harmonics <- ncol(reconstructed_coe$coe) / 4
-      if (n_harmonics != as.integer(n_harmonics)) {
-        stop("Coefficient length is not divisible by 4 (invalid for EFA)")
-      }
-      n_harmonics <- as.integer(n_harmonics)
-      message("Number of harmonics: ", n_harmonics)
-      
-      # Use Momocs efourier_i with proper normalization
-      message("Attempting Momocs efourier_i reconstruction...")
-      outline <- tryCatch({
-        result <- Momocs::efourier_i(reconstructed_coe, nb.h = n_harmonics, nb.pts = 120)
-        message("Momocs efourier_i succeeded")
-        result
-      }, error = function(e) {
-        # If Momocs fails, fall back to manual reconstruction
-        message("Momocs efourier_i failed: ", conditionMessage(e))
-        message("Falling back to manual reconstruction")
-        NULL
-      })
-      
-      # Extract coordinates
-      if (!is.null(outline)) {
-        if (inherits(outline, "Out") && !is.null(outline$coo)) {
-          coords <- outline$coo[[1]]
-          message("Extracted coords from Out object: ", nrow(coords), " x ", ncol(coords))
-        } else if (is.matrix(outline)) {
-          coords <- outline
-          message("Using outline as matrix directly: ", nrow(coords), " x ", ncol(coords))
-        } else if (is.list(outline) && !is.null(outline[[1]])) {
-          coords <- outline[[1]]
-          message("Extracted coords from list: ", nrow(coords), " x ", ncol(coords))
-        } else {
-          message("Outline format not recognized, triggering fallback")
-          outline <- NULL  # Trigger fallback
-        }
+        # Fallback: build OutCoe manually (old approach)
+        message("EFA object not in model, using manual OutCoe construction")
+        outline <- NULL  # Will trigger manual reconstruction below
       }
       
       # Fallback: manual reconstruction if Momocs failed
@@ -609,28 +516,53 @@ shape_reconstruction_server <- function(id) {
         if (!is.null(reconstructed_coe$norm) && reconstructed_coe$norm == TRUE) {
           message("Applying denormalization transformations...")
           
-          # Get normalization parameters
-          r1 <- reconstructed_coe$r1
-          r2 <- reconstructed_coe$r2
-          baseline1 <- reconstructed_coe$baseline1
-          baseline2 <- reconstructed_coe$baseline2
-          
-          if (!is.null(r1) && !is.null(r2) && !is.null(baseline1) && !is.null(baseline2)) {
-            # Scale by size (r2 is the size parameter)
-            if (r2 > 0) {
-              x <- x * r2
-              y <- y * r2
-              message("  Scaled by r2 = ", round(r2, 3))
+          # Try to use shape_metadata (our manual capture) first
+          if (!is.null(model$shape_metadata) && length(model$shape_metadata) > 0) {
+            # Calculate mean size and centroid from all shapes
+            sizes <- sapply(model$shape_metadata, function(m) m$size)
+            centroids <- t(sapply(model$shape_metadata, function(m) m$centroid))
+            
+            mean_size <- mean(sizes, na.rm = TRUE)
+            mean_centroid <- colMeans(centroids, na.rm = TRUE)
+            
+            message("  Using shape metadata for denormalization")
+            message("  Mean size: ", round(mean_size, 3))
+            message("  Mean centroid: [", paste(round(mean_centroid, 3), collapse = ", "), "]")
+            
+            # Scale by mean size
+            if (mean_size > 0) {
+              x <- x * mean_size
+              y <- y * mean_size
             }
             
-            # Translate by baseline (centroid position)
-            if (length(baseline1) >= 2) {
-              x <- x + baseline1[1]
-              y <- y + baseline1[2]
-              message("  Translated by baseline1 = [", paste(round(baseline1, 3), collapse = ", "), "]")
-            }
+            # Translate by mean centroid
+            x <- x + mean_centroid[1]
+            y <- y + mean_centroid[2]
+            
           } else {
-            message("  Warning: Some normalization parameters missing, skipping denormalization")
+            # Fallback to r1/r2/baseline if available
+            r1 <- reconstructed_coe$r1
+            r2 <- reconstructed_coe$r2
+            baseline1 <- reconstructed_coe$baseline1
+            baseline2 <- reconstructed_coe$baseline2
+            
+            if (!is.null(r1) && !is.null(r2) && !is.null(baseline1) && !is.null(baseline2)) {
+              # Scale by size (r2 is the size parameter)
+              if (r2 > 0) {
+                x <- x * r2
+                y <- y * r2
+                message("  Scaled by r2 = ", round(r2, 3))
+              }
+              
+              # Translate by baseline (centroid position)
+              if (length(baseline1) >= 2) {
+                x <- x + baseline1[1]
+                y <- y + baseline1[2]
+                message("  Translated by baseline1 = [", paste(round(baseline1, 3), collapse = ", "), "]")
+              }
+            } else {
+              message("  Warning: No denormalization parameters available")
+            }
           }
         }
         

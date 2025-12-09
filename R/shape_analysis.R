@@ -112,6 +112,28 @@ shape_analysis <- function(shape_dir,
   if (verbose) message("Performing Elliptical Fourier Analysis...")
   # 'norm' controls whether descriptors are normalized to first harmonic (TRUE) or longest radius (FALSE)
   # Use start = TRUE to set a consistent phasing across shapes.
+  
+  # If normalization is enabled, we need to capture size/position info for reconstruction
+  shape_metadata <- NULL
+  if (norm) {
+    if (verbose) message("Extracting shape metadata for denormalization...")
+    # Extract centroid size and position for each shape before EFA normalization
+    shape_metadata <- list()
+    for (i in seq_along(normalized_shapes$coo)) {
+      coords <- normalized_shapes$coo[[i]]
+      # Calculate centroid
+      centroid <- colMeans(coords)
+      # Calculate size (mean distance from centroid)
+      size <- mean(sqrt(rowSums((coords - rep(centroid, each = nrow(coords)))^2)))
+      shape_metadata[[i]] <- list(
+        centroid = centroid,
+        size = size,
+        name = names(normalized_shapes$coo)[i]
+      )
+    }
+    if (verbose) message("  Captured metadata for ", length(shape_metadata), " shapes")
+  }
+  
   efa_results <- .perform_efa(normalized_shapes, norm = norm, harmonics = harmonics, start = TRUE, verbose = verbose)
   
   # Perform PCA ----
@@ -190,6 +212,7 @@ shape_analysis <- function(shape_dir,
   .save_reconstruction_data(
     pca_results = pca_results,
     efa_results = efa_results_stored,
+    shape_metadata = shape_metadata,
     norm = norm,
     harmonics = harmonics,
     start_point = start_point,
@@ -404,7 +427,7 @@ shape_analysis <- function(shape_dir,
 
 #' Save reconstruction data for shape reconstruction
 #' @noRd
-.save_reconstruction_data <- function(pca_results, efa_results, norm, harmonics, 
+.save_reconstruction_data <- function(pca_results, efa_results, shape_metadata, norm, harmonics, 
                                      start_point, model_path, info_path, verbose) {
   
   # Extract reconstruction components from PCA
@@ -414,19 +437,11 @@ shape_analysis <- function(shape_dir,
     center = pca_results$center,          # Centering values
     sdev = pca_results$sdev,              # Standard deviations
     
-    # EFA results - save the essential components AND the original object for proper reconstruction
-    efa_coe = efa_results$coe,            # Coefficient matrix
-    efa_norm = if (!is.null(efa_results$norm)) efa_results$norm else NULL,
-    efa_method = attr(efa_results, "method"),  # Method attribute
+    # EFA results - save the COMPLETE OutCoe object for proper reconstruction
+    efa_object = efa_results,             # Complete EFA object with all attributes
     
-    # Store normalization info that efourier_i needs
-    efa_r1 = if (!is.null(efa_results$r1)) efa_results$r1 else NULL,
-    efa_r2 = if (!is.null(efa_results$r2)) efa_results$r2 else NULL,
-    efa_baseline1 = if (!is.null(efa_results$baseline1)) efa_results$baseline1 else NULL,
-    efa_baseline2 = if (!is.null(efa_results$baseline2)) efa_results$baseline2 else NULL,
-    efa_lnef = if (!is.null(efa_results$lnef)) efa_results$lnef else NULL,
-    efa_A1 = if (!is.null(efa_results$A1)) efa_results$A1 else NULL,
-    efa_mod = if (!is.null(efa_results$mod)) efa_results$mod else NULL,
+    # Shape metadata for denormalization (our manual capture - backup method)
+    shape_metadata = shape_metadata,
     
     # Analysis parameters
     parameters = list(
