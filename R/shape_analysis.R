@@ -127,6 +127,18 @@ shape_analysis <- function(shape_dir,
   # Store efa_results for reconstruction (keeping reference before any cleanup)
   efa_results_stored <- efa_results
   
+  # Debug: Check what's in EFA results for reconstruction
+  if (verbose) {
+    message("EFA results structure for reconstruction:")
+    message("  Components: ", paste(names(efa_results), collapse = ", "))
+    message("  norm attribute: ", if (!is.null(efa_results$norm)) efa_results$norm else "NULL")
+    message("  r1 present: ", !is.null(efa_results$r1))
+    message("  r2 present: ", !is.null(efa_results$r2))
+    message("  baseline1 present: ", !is.null(efa_results$baseline1))
+    message("  baseline2 present: ", !is.null(efa_results$baseline2))
+    message("  method attribute: ", if (!is.null(attr(efa_results, "method"))) attr(efa_results, "method") else "NULL")
+  }
+  
   # Extract and format results ----
   if (verbose) message("Extracting PCA scores...")
   scores <- .extract_pca_scores(pca_results)
