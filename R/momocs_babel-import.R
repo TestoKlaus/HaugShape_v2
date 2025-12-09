@@ -370,10 +370,10 @@ import_StereoMorph_curve1 <- function(path){
   stop("deprecated due to major update in StereoMorph export file format. You can try the solution by Stas Malavin before this being fixed in Momocs: https://github.com/stas-malavin/Momocs/blob/master/R/importSM.r")
 
   # we split the loci contained in the first column
-  df <- utils::read.table(path, header=FALSE, stringsAsFactors = FALSE) %>%
-    select(locus=1, x=2, y=3) %>%
-    mutate(name=substr(locus, 1, nchar(locus)-4)) %>%
-    select(name, x, y)
+  df <- utils::read.table(path, header=FALSE, stringsAsFactors = FALSE)
+  df <- data.frame(locus=df[,1], x=df[,2], y=df[,3], stringsAsFactors=FALSE)
+  df$name <- substr(df$locus, 1, nchar(df$locus)-4)
+  df <- df[, c("name", "x", "y")]
   return(split(df[, c("x", "y")], as.factor(df$name)))
 }
 

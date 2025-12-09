@@ -525,7 +525,8 @@ PCcontrib.PCA <-
       sd.i <- sd(x$x[, nax[i]])
       pos.i <- data.frame(x=sd.r*sd.i, y=rep(0, length(sd)))
       shp.i <- morphospace2PCA(x, xax=i, yax=1, pos = pos.i)
-      shp[[i]] <- mutate(shp.i, nax=i) }
+      shp.i$nax <- i
+      shp[[i]] <- shp.i }
 
     shp <- dplyr::bind_rows(shp)
     shp$shp <- sd.r[shp$shp]

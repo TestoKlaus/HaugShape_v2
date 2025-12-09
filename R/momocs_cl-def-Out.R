@@ -37,12 +37,12 @@ Out.data.frame <- function(x, fac = data.frame(), ldk = list()){
   .check(any(colnames(x)=="coo"),
          "data.frame must have a `coo` column")
   res <- Out(x$coo)
-  x <- dplyr::select(x, -coo)
+  x <- x[, !names(x) %in% "coo", drop=FALSE]
 
   # if any name column, add/drop
   if (any(colnames(x)=="name")){
     names(res) <- x$name
-    x <- dplyr::select(x, -name)
+    x <- x[, !names(x) %in% "name", drop=FALSE]
   }
 
   # if any ldk column, add/drop it
@@ -51,7 +51,7 @@ Out.data.frame <- function(x, fac = data.frame(), ldk = list()){
   } else {
     if (any(colnames(x)=="ldk")){
       res$ldk <- x$ldk
-      x <- dplyr::select(x, -ldk)
+      x <- x[, !names(x) %in% "ldk", drop=FALSE]
     }
   }
 
