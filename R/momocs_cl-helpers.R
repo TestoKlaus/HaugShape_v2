@@ -210,4 +210,73 @@ which_out.Ldk <- function(x, conf=1e-3, ...){
   }
 }
 
+# Check if object has slidings
+is_slidings <- function(x){
+  !is.null(x$slidings)
+}
+
+#' Validates Coo objects
+#'
+#' No validation for S3 objects, so this method is a (cheap) attempt at checking
+#' Coo objects, Out, Opn and Ldk objects.
+#'
+#' @param Coo any Coo object
+#' @return a Coo object.
+#' @export
+verify <- function(Coo){
+  UseMethod("verify")
+}
+
+#' @export
+verify.default <- function(Coo){
+  stop("only implemented on Coo")
+}
+
+#' @export
+verify.Coo <- function(Coo){
+  # checks coo
+  Coo <- coo_check(Coo)
+  n <- length(Coo$coo)
+
+  # checks fac
+  if (is_fac(Coo)) {
+    fac <- Coo$fac
+    .check(is.data.frame(fac),
+           "$fac must be a data.frame")
+    .check(identical(nrow(fac), n),
+           "the number of rows in $fac must equal the number of shapes")
+  }
+
+  # checks ldk if any
+  if (is_ldk(Coo)){
+    ldk <- Coo$ldk
+    .check(identical(length(ldk), n),
+           "the number of $ldk must equal the number of shapes")
+    .check(length(unique(sapply(ldk, length)))==1,
+           "the number of $ldk defined must be the same across shapes")
+    .check(all(coo_nb(Coo) >= sapply(ldk, max)),
+           "at least one shape as a $ldk id higher than its number of coordinates")
+  }
+
+  # ldk
+  if (is_Ldk(Coo))
+    .check(length(unique(coo_nb(Coo)))==1,
+           "number of coordinates must be the same for Ldk")
+
+  #checks slidings if any
+  if (is_slidings(Coo)){
+    .check(is.matrix(Coo$slidings),
+           "slidings must be a matrix")
+    .check(ncol(Coo$slidings)==3,
+           "slidings must be a 3-columns matrix")
+    .check(min(coo_nb(Coo)) >= nrow(unique(Coo$slidings)),
+           "number of sliding must be lower than number of coordinates")
+  }
+  # ensure data_frame - use base R instead of tibble
+  if (is_fac(Coo)) {
+    Coo$fac <- as.data.frame(Coo$fac)
+  }
+  return(Coo)
+}
+
 ##### End Miscellaneous
