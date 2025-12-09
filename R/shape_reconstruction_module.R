@@ -374,6 +374,28 @@ shape_reconstruction_server <- function(id) {
       n_coefs <- length(model$center)
       n_pcs <- ncol(model$rotation)
       
+      # Debug: Print model structure details
+      message("=== Model Structure Debug ===")
+      message("Model components: ", paste(names(model), collapse = ", "))
+      if (!is.null(model$parameters)) {
+        message("Parameters: norm=", model$parameters$norm, 
+                ", harmonics=", model$parameters$harmonics,
+                ", n_harmonics_used=", model$parameters$n_harmonics_used)
+      }
+      message("EFA norm flag: ", if (!is.null(model$efa_norm)) model$efa_norm else "NULL")
+      message("EFA method: ", if (!is.null(model$efa_method)) model$efa_method else "NULL")
+      
+      # Sample some original coefficients for comparison
+      if (!is.null(model$efa_coe) && is.matrix(model$efa_coe)) {
+        message("Original EFA coefficients (first specimen, first 8): ")
+        message("  ", paste(round(model$efa_coe[1, 1:min(8, ncol(model$efa_coe))], 4), collapse = ", "))
+        if (nrow(model$efa_coe) > 1) {
+          message("Original EFA coefficients (mean of all specimens, first 8): ")
+          coef_means <- colMeans(model$efa_coe, na.rm = TRUE)
+          message("  ", paste(round(coef_means[1:min(8, length(coef_means))], 4), collapse = ", "))
+        }
+      }
+      
       # Ensure pc_scores has correct length and pad with zeros if needed
       if (length(pc_scores) > n_pcs) {
         pc_scores <- pc_scores[1:n_pcs]
@@ -558,6 +580,10 @@ shape_reconstruction_server <- function(id) {
         x <- numeric(nb_pts)
         y <- numeric(nb_pts)
         
+        # For non-normalized EFA, we need to reconstruct the DC component (A0, C0)
+        # which represents the centroid offset
+        # In EFA without normalization, the first harmonic contains position info
+        
         for (h in 1:n_harmonics) {
           idx <- (h - 1) * 4 + 1:4
           An <- reconstructed_coefs[idx[1]]
@@ -565,6 +591,7 @@ shape_reconstruction_server <- function(id) {
           Cn <- reconstructed_coefs[idx[3]]
           Dn <- reconstructed_coefs[idx[4]]
           
+          # Standard inverse Fourier: add each harmonic's contribution
           x <- x + An * cos(h * theta) + Bn * sin(h * theta)
           y <- y + Cn * cos(h * theta) + Dn * sin(h * theta)
         }
@@ -573,6 +600,21 @@ shape_reconstruction_server <- function(id) {
         message("Manual reconstruction complete: ", nrow(coords), " points")
         message("X range: [", round(min(x), 3), ", ", round(max(x), 3), "]")
         message("Y range: [", round(min(y), 3), ", ", round(max(y), 3), "]")
+        
+        # Check if shape looks degenerate (aspect ratio too extreme or too small)
+        x_range <- max(x) - min(x)
+        y_range <- max(y) - min(y)
+        aspect_ratio <- if (y_range > 0) x_range / y_range else 0
+        
+        message("Aspect ratio X/Y: ", round(aspect_ratio, 3))
+        
+        if (x_range < 0.01 && y_range < 0.01) {
+          warning("Reconstructed shape is very small. This may indicate an issue with the coefficients.")
+        }
+        if (aspect_ratio < 0.1 || aspect_ratio > 10) {
+          warning("Reconstructed shape has extreme aspect ratio: ", round(aspect_ratio, 3), 
+                  ". This may indicate missing normalization parameters.")
+        }
       }
       
       message("=== Reconstruction Complete ===\n")
