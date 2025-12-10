@@ -427,33 +427,10 @@ shape_reconstruction_server <- function(id) {
       # coeff_split calculates nb.h automatically from length
       coef_list <- coeff_split(reconstructed_coefs)
       
-      # If coefficients were normalized during analysis, denormalize them
-      if (is_normalized) {
-        # Extract normalization parameters from first harmonic
-        A1 <- coef_list$an[1]
-        B1 <- coef_list$bn[1]
-        C1 <- coef_list$cn[1]
-        D1 <- coef_list$dn[1]
-        
-        # Calculate normalization parameters
-        theta <- 0.5 * atan(2 * (A1 * B1 + C1 * D1) / (A1^2 + C1^2 - B1^2 - D1^2)) %% pi
-        phaseshift <- matrix(c(cos(theta), sin(theta), -sin(theta), cos(theta)), 2, 2)
-        M2 <- matrix(c(A1, C1, B1, D1), 2, 2) %*% phaseshift
-        v <- apply(M2^2, 2, sum)
-        if (v[1] < v[2]) theta <- theta + pi/2
-        theta <- (theta + pi/2) %% pi - pi/2
-        Aa <- A1 * cos(theta) + B1 * sin(theta)
-        Cc <- C1 * cos(theta) + D1 * sin(theta)
-        scale <- sqrt(Aa^2 + Cc^2)
-        psi <- atan(Cc/Aa) %% pi
-        if (Aa < 0) psi <- psi + pi
-        size <- 1/scale
-        
-        # Denormalize coefficients
-        denorm_coefs <- .efourier_denorm(coef_list$an, coef_list$bn, coef_list$cn, coef_list$dn,
-                                        size, theta, psi)
-        coef_list <- denorm_coefs
-      }
+      # IMPORTANT: If normalization was used during analysis, the reconstructed 
+      # coefficients are in the normalized space. We need to work with them directly
+      # without attempting denormalization, as denormalization can cause flips.
+      # The coefficients from PCA reconstruction represent valid shape variations.
       
       # Add DC offset components (typically 0 after centering)
       if (is.null(coef_list$ao)) coef_list$ao <- 0
