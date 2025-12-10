@@ -42,6 +42,12 @@ shape_reconstruction_ui <- function(id) {
           hr(),
           
           # Reconstruction options
+          radioButtons(ns("score_type"), "Input type:",
+                      choices = c("Standard Deviation units" = "sd",
+                                  "Absolute PC values" = "absolute"),
+                      selected = "sd", inline = TRUE),
+          helpText("SD units: 0 = mean, ±1 = one SD from mean. Absolute: use actual PC score values from your data."),
+          
           checkboxInput(ns("show_original"), "Show original shape (if available)", value = FALSE),
           numericInput(ns("plot_size"), "Plot size (pixels)", value = 600, min = 300, max = 1200, step = 50),
           
@@ -279,6 +285,9 @@ shape_reconstruction_server <- function(id) {
       model <- loaded_model()
       req(model)
       
+      score_type <- input$score_type
+      if (is.null(score_type)) score_type <- "sd"
+      
       n_pcs <- min(10, model$parameters$n_components)  # Limit to first 10 PCs for UI
       
       inputs <- lapply(1:n_pcs, function(i) {
@@ -296,9 +305,16 @@ shape_reconstruction_server <- function(id) {
         )
       })
       
+      title_text <- if (score_type == "sd") "PC Scores (in SD units)" else "PC Scores (absolute values)"
+      help_text <- if (score_type == "sd") {
+        "Enter desired PC scores. 0 = mean shape, ±1 = one standard deviation from mean."
+      } else {
+        "Enter absolute PC score values (e.g., from your morphospace plot)."
+      }
+      
       tagList(
-        tags$h4("PC Scores (in SD units)"),
-        helpText("Enter desired PC scores. 0 = mean shape, ±1 = one standard deviation from mean."),
+        tags$h4(title_text),
+        helpText(help_text),
         do.call(fluidRow, lapply(inputs, function(inp) column(width = 3, inp)))
       )
     })
@@ -322,6 +338,9 @@ shape_reconstruction_server <- function(id) {
         return()
       }
       
+      score_type <- input$score_type
+      if (is.null(score_type)) score_type <- "sd"
+      
       # Collect PC scores from inputs
       n_pcs <- min(10, model$parameters$n_components)
       pc_scores <- sapply(1:n_pcs, function(i) {
@@ -340,7 +359,7 @@ shape_reconstruction_server <- function(id) {
       
       withProgress(message = "Reconstructing shape...", value = 0.5, {
         shape <- tryCatch({
-          .reconstruct_single_shape(model, pc_scores)
+          .reconstruct_single_shape(model, pc_scores, score_type)
         }, error = function(e) {
           # More detailed error message
           err_msg <- conditionMessage(e)
@@ -355,7 +374,7 @@ shape_reconstruction_server <- function(id) {
         })
         
         if (!is.null(shape)) {
-          reconstructed_shape(list(coords = shape, pc_scores = pc_scores))
+          reconstructed_shape(list(coords = shape, pc_scores = pc_scores, score_type = score_type))
           showNotification("Shape reconstructed!", type = "message")
         }
       })
@@ -396,7 +415,7 @@ shape_reconstruction_server <- function(id) {
     }
     
     # Helper function to reconstruct a single shape
-    .reconstruct_single_shape <- function(model, pc_scores) {
+    .reconstruct_single_shape <- function(model, pc_scores, score_type = "sd") {
       # Ensure pc_scores is numeric vector
       pc_scores <- as.numeric(pc_scores)
       
@@ -414,8 +433,16 @@ shape_reconstruction_server <- function(id) {
       }
       
       # Reconstruct Fourier coefficients using PCA
-      # Formula: reconstructed_coefs = center + (pc_scores * sdev) %*% t(rotation)
-      scaled_scores <- pc_scores * model$sdev[1:length(pc_scores)]
+      # If score_type is "sd", scale by standard deviations
+      # If score_type is "absolute", use scores directly
+      if (score_type == "sd") {
+        # Formula: reconstructed_coefs = center + (pc_scores * sdev) %*% t(rotation)
+        scaled_scores <- pc_scores * model$sdev[1:length(pc_scores)]
+      } else {
+        # Use absolute PC values directly
+        scaled_scores <- pc_scores
+      }
+      
       contribution <- as.vector(scaled_scores %*% t(model$rotation))
       reconstructed_coefs <- model$center + contribution
       
@@ -460,8 +487,9 @@ shape_reconstruction_server <- function(id) {
       polygon(coords, col = rgb(0.25, 0.55, 0.75, 0.3), border = "steelblue", lwd = 2)
       
       # Add PC scores as subtitle
+      score_type_label <- if (!is.null(shape_data$score_type) && shape_data$score_type == "absolute") "(absolute)" else "(SD)"
       pc_text <- paste(names(shape_data$pc_scores), "=", round(shape_data$pc_scores, 2), collapse = ", ")
-      mtext(pc_text, side = 3, line = 0.5, cex = 0.8, col = "gray30")
+      mtext(paste(pc_text, score_type_label), side = 3, line = 0.5, cex = 0.8, col = "gray30")
       
     }, height = function() {
       size <- input$plot_size
@@ -475,11 +503,13 @@ shape_reconstruction_server <- function(id) {
       req(shape_data)
       
       coords <- shape_data$coords
+      score_type_label <- if (!is.null(shape_data$score_type) && shape_data$score_type == "absolute") "Absolute PC values" else "SD units"
       paste0(
         "Reconstruction successful\n",
         "Number of outline points: ", nrow(coords), "\n",
         "X range: [", round(min(coords[,1]), 2), ", ", round(max(coords[,1]), 2), "]\n",
         "Y range: [", round(min(coords[,2]), 2), ", ", round(max(coords[,2]), 2), "]\n",
+        "\nInput type: ", score_type_label, "\n",
         "\nPC Scores used:\n",
         paste(names(shape_data$pc_scores), "=", round(shape_data$pc_scores, 3), collapse = "\n")
       )
