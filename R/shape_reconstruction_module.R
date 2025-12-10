@@ -652,9 +652,6 @@ shape_reconstruction_server <- function(id) {
       return(coords)
     }
     
-    # Batch reconstruction function
-    .reconstruct_batch <- function(model, pc_axis, min_val, max_val, n_steps, hold_others_zero) {
-    
     # Plot reconstructed shape
     output$shape_plot <- renderPlot({
       shape_data <- reconstructed_shape()
