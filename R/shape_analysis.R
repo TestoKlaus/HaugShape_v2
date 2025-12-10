@@ -759,6 +759,10 @@ load_reconstruction_csv <- function(folder_path, validate = TRUE, verbose = TRUE
     if (verbose) message("  Loaded metadata: norm=", parameters$norm, ", harmonics=", parameters$n_harmonics)
   }
   
+  # Add computed parameters
+  parameters$n_components <- ncol(rotation)
+  parameters$n_coefficients <- length(center)
+  
   # Build model object
   model <- list(
     rotation = rotation,

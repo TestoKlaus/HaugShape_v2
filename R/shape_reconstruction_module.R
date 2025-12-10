@@ -404,48 +404,6 @@ shape_reconstruction_server <- function(id) {
       n_coefs <- length(model$center)
       n_pcs <- ncol(model$rotation)
       
-      # Debug: Print model structure details
-      message("=== Model Structure Debug ===")
-      message("Model components: ", paste(names(model), collapse = ", "))
-      if (!is.null(model$parameters)) {
-        message("Parameters: norm=", model$parameters$norm, 
-                ", harmonics=", model$parameters$harmonics,
-                ", n_harmonics_used=", model$parameters$n_harmonics_used)
-      }
-      
-      # Check for explicitly extracted EFA components (new format - preferred)
-      if (!is.null(model$efa_norm)) {
-        message("EFA norm flag (extracted): ", model$efa_norm)
-      } else {
-        message("EFA norm flag (extracted): NULL")
-      }
-      
-      if (!is.null(model$efa_method)) {
-        message("EFA method (extracted): ", model$efa_method)
-      } else {
-        message("EFA method (extracted): NULL")
-      }
-      
-      # Check for EFA object components (backup)
-      if (!is.null(model$efa_object)) {
-        message("EFA object present: TRUE")
-        message("  EFA object norm: ", if (!is.null(model$efa_object$norm)) model$efa_object$norm else "NULL")
-        message("  EFA object method: ", if (!is.null(model$efa_object$method)) model$efa_object$method else "NULL")
-      } else {
-        message("EFA object present: FALSE")
-      }
-      
-      # Sample some original coefficients for comparison
-      if (!is.null(model$efa_coe) && is.matrix(model$efa_coe)) {
-        message("Original EFA coefficients (first specimen, first 8): ")
-        message("  ", paste(round(model$efa_coe[1, 1:min(8, ncol(model$efa_coe))], 4), collapse = ", "))
-        if (nrow(model$efa_coe) > 1) {
-          message("Original EFA coefficients (mean of all specimens, first 8): ")
-          coef_means <- colMeans(model$efa_coe, na.rm = TRUE)
-          message("  ", paste(round(coef_means[1:min(8, length(coef_means))], 4), collapse = ", "))
-        }
-      }
-      
       # Ensure pc_scores has correct length and pad with zeros if needed
       if (length(pc_scores) > n_pcs) {
         pc_scores <- pc_scores[1:n_pcs]
@@ -455,200 +413,58 @@ shape_reconstruction_server <- function(id) {
         pc_scores <- full_scores
       }
       
-      # Reconstruct Fourier coefficients
-      # PCA formula: X_reconstructed = center + scores %*% t(rotation)
-      # But scores are typically in SD units, so we need to scale them
-      # Standard PCA reconstruction: X = center + (scores * sdev) %*% t(rotation)
-      # rotation matrix has eigenvectors as COLUMNS [n_coefs x n_pcs]
-      # pc_scores is [n_pcs] in SD units
-      # We need: center [n_coefs] + (pc_scores [n_pcs] * sdev [n_pcs]) %*% t(rotation [n_coefs x n_pcs])
-      
-      # Debug output
-      message("=== Shape Reconstruction Debug ===")
-      message("Input PC scores: ", paste(round(pc_scores, 3), collapse = ", "))
-      message("Number of PCs: ", n_pcs)
-      message("Number of coefficients: ", n_coefs)
-      message("Center length: ", length(model$center))
-      message("Rotation dims: ", paste(dim(model$rotation), collapse = " x "))
-      message("Sdev length: ", length(model$sdev))
-      
-      # Scale PC scores by standard deviations
+      # Reconstruct Fourier coefficients using PCA
+      # Formula: reconstructed_coefs = center + (pc_scores * sdev) %*% t(rotation)
       scaled_scores <- pc_scores * model$sdev[1:length(pc_scores)]
-      message("Scaled scores: ", paste(round(scaled_scores, 3), collapse = ", "))
-      
-      # Transform back to coefficient space
-      # t(rotation) is [n_pcs x n_coefs], scaled_scores is [n_pcs]
-      # Result: [n_coefs]
       contribution <- as.vector(scaled_scores %*% t(model$rotation))
-      message("Contribution range: [", round(min(contribution), 3), ", ", round(max(contribution), 3), "]")
-      
       reconstructed_coefs <- model$center + contribution
-      message("Reconstructed coefs range: [", round(min(reconstructed_coefs), 3), ", ", round(max(reconstructed_coefs), 3), "]")
-      message("Center range: [", round(min(model$center), 3), ", ", round(max(model$center), 3), "]")
       
-      # Verify coefficient length
-      if (length(reconstructed_coefs) != n_coefs) {
-        stop("Coefficient length mismatch: ", length(reconstructed_coefs), " vs ", n_coefs)
+      # Get EFA parameters from model
+      n_harmonics <- model$parameters$n_harmonics
+      is_normalized <- isTRUE(model$parameters$norm)
+      
+      # Split coefficients into A, B, C, D components
+      coef_list <- coeff_split(reconstructed_coefs, nb.h = n_harmonics)
+      
+      # If coefficients were normalized during analysis, denormalize them
+      if (is_normalized) {
+        # Extract normalization parameters from first harmonic
+        A1 <- coef_list$an[1]
+        B1 <- coef_list$bn[1]
+        C1 <- coef_list$cn[1]
+        D1 <- coef_list$dn[1]
+        
+        # Calculate normalization parameters
+        theta <- 0.5 * atan(2 * (A1 * B1 + C1 * D1) / (A1^2 + C1^2 - B1^2 - D1^2)) %% pi
+        phaseshift <- matrix(c(cos(theta), sin(theta), -sin(theta), cos(theta)), 2, 2)
+        M2 <- matrix(c(A1, C1, B1, D1), 2, 2) %*% phaseshift
+        v <- apply(M2^2, 2, sum)
+        if (v[1] < v[2]) theta <- theta + pi/2
+        theta <- (theta + pi/2) %% pi - pi/2
+        Aa <- A1 * cos(theta) + B1 * sin(theta)
+        Cc <- C1 * cos(theta) + D1 * sin(theta)
+        scale <- sqrt(Aa^2 + Cc^2)
+        psi <- atan(Cc/Aa) %% pi
+        if (Aa < 0) psi <- psi + pi
+        size <- 1/scale
+        
+        # Denormalize coefficients
+        denorm_coefs <- .efourier_denorm(coef_list$an, coef_list$bn, coef_list$cn, coef_list$dn,
+                                        size, theta, psi)
+        coef_list <- denorm_coefs
       }
       
-      # SIMPLIFIED APPROACH: Use the complete EFA object from the model
-      # Reconstruct shape from coefficients
-      # First try to use explicitly extracted EFA components (new format)
-      # Fall back to efa_object if needed (old format)
+      # Add DC offset components (typically 0 after centering)
+      if (is.null(coef_list$ao)) coef_list$ao <- 0
+      if (is.null(coef_list$co)) coef_list$co <- 0
       
-      if (!is.null(model$efa_coe)) {
-        message("Using explicitly extracted EFA components")
-        
-        # Determine number of harmonics
-        n_harmonics <- ncol(model$efa_coe) / 4
-        message("Number of harmonics: ", n_harmonics)
-        
-        # Check if coefficients are normalized
-        is_normalized <- !is.null(model$efa_norm) && model$efa_norm == TRUE
-        message("Coefficients normalized: ", is_normalized)
-        
-        # Split coefficients into A, B, C, D
-        coef_list <- coeff_split(reconstructed_coefs, nb.h = n_harmonics, cph = 4)
-        
-        if (is_normalized) {
-          message("Denormalizing coefficients before reconstruction...")
-          
-          # Get normalization parameters from the first specimen in the original EFA object
-          # These are typically stored when efourier is run with norm=TRUE
-          # We need to estimate them from the data
-          # For normalized coefficients, the first harmonic defines the normalization
-          A1 <- coef_list$an[1]
-          B1 <- coef_list$bn[1]
-          C1 <- coef_list$cn[1]
-          D1 <- coef_list$dn[1]
-          
-          # Calculate normalization parameters (from efourier_norm logic)
-          theta <- 0.5 * atan(2 * (A1 * B1 + C1 * D1) / (A1^2 + C1^2 - B1^2 - D1^2)) %% pi
-          phaseshift <- matrix(c(cos(theta), sin(theta), -sin(theta), cos(theta)), 2, 2)
-          M2 <- matrix(c(A1, C1, B1, D1), 2, 2) %*% phaseshift
-          v <- apply(M2^2, 2, sum)
-          if (v[1] < v[2]) {
-            theta <- theta + pi/2
-          }
-          theta <- (theta + pi/2) %% pi - pi/2
-          Aa <- A1 * cos(theta) + B1 * sin(theta)
-          Cc <- C1 * cos(theta) + D1 * sin(theta)
-          scale <- sqrt(Aa^2 + Cc^2)
-          psi <- atan(Cc/Aa) %% pi
-          if (Aa < 0) {
-            psi <- psi + pi
-          }
-          size <- 1/scale
-          
-          message("  Normalization params: size=", round(size, 4), ", theta=", round(theta, 4), ", psi=", round(psi, 4))
-          
-          # Denormalize coefficients
-          denorm_coefs <- .efourier_denorm(coef_list$an, coef_list$bn, coef_list$cn, coef_list$dn,
-                                          size, theta, psi)
-          coef_list <- denorm_coefs
-          message("  Coefficients denormalized successfully")
-        }
-        
-        # Now use efourier_i with the (possibly denormalized) coefficients
-        message("Reconstructing shape with efourier_i...")
-        
-        # Add ao and co (DC components) - set to 0 if not present
-        # These control the position of the shape but are typically 0 after centering
-        if (is.null(coef_list$ao)) coef_list$ao <- 0
-        if (is.null(coef_list$co)) coef_list$co <- 0
-        
-        message("  Calling efourier_i with list components: ", paste(names(coef_list), collapse = ", "))
-        message("  nb.h = ", n_harmonics, ", nb.pts = 120")
-        
-        coords <- tryCatch({
-          result <- efourier_i(coef_list, nb.h = n_harmonics, nb.pts = 120)
-          message("  efourier_i succeeded! Result dimensions: ", nrow(result), " x ", ncol(result))
-          result
-        }, error = function(e) {
-          message("  efourier_i failed: ", conditionMessage(e))
-          message("  Error class: ", class(e))
-          message("  Traceback: ", paste(as.character(sys.calls()), collapse = " -> "))
-          NULL
-        })
-        
-      } else if (!is.null(model$efa_object)) {
-        # Fallback: try to use efa_object (old format)
-        message("Falling back to efa_object (old format)")
-        
-        n_harmonics <- ncol(model$efa_object$coe) / 4
-        message("Number of harmonics: ", n_harmonics)
-        
-        # Try to get normalization from object or parameters
-        is_normalized <- FALSE
-        if (!is.null(model$efa_object$norm)) {
-          is_normalized <- model$efa_object$norm == TRUE
-        } else if (!is.null(model$parameters$norm)) {
-          is_normalized <- model$parameters$norm == TRUE
-          message("  (Using normalization flag from parameters)")
-        }
-        message("Coefficients normalized: ", is_normalized)
-        
-        # Split coefficients
-        coef_list <- coeff_split(reconstructed_coefs, nb.h = n_harmonics, cph = 4)
-        message("Coefficient list created: ", paste(names(coef_list), collapse = ", "))
-        
-        # Apply denormalization if needed
-        if (is_normalized) {
-          message("Denormalizing coefficients...")
-          # Calculate normalization parameters from first harmonic
-          A1 <- coef_list$an[1]
-          B1 <- coef_list$bn[1]
-          C1 <- coef_list$cn[1]
-          D1 <- coef_list$dn[1]
-          
-          theta <- 0.5 * atan(2 * (A1 * B1 + C1 * D1) / (A1^2 + C1^2 - B1^2 - D1^2)) %% pi
-          phaseshift <- matrix(c(cos(theta), sin(theta), -sin(theta), cos(theta)), 2, 2)
-          M2 <- matrix(c(A1, C1, B1, D1), 2, 2) %*% phaseshift
-          v <- apply(M2^2, 2, sum)
-          if (v[1] < v[2]) theta <- theta + pi/2
-          theta <- (theta + pi/2) %% pi - pi/2
-          Aa <- A1 * cos(theta) + B1 * sin(theta)
-          Cc <- C1 * cos(theta) + D1 * sin(theta)
-          scale <- sqrt(Aa^2 + Cc^2)
-          psi <- atan(Cc/Aa) %% pi
-          if (Aa < 0) psi <- psi + pi
-          size <- 1/scale
-          
-          message("  Normalization params: size=", round(size, 4), ", theta=", round(theta, 4), ", psi=", round(psi, 4))
-          
-          denorm_coefs <- .efourier_denorm(coef_list$an, coef_list$bn, coef_list$cn, coef_list$dn,
-                                          size, theta, psi)
-          coef_list <- denorm_coefs
-          message("  Coefficients denormalized successfully")
-        }
-        
-        # Add ao and co components
-        if (is.null(coef_list$ao)) coef_list$ao <- 0
-        if (is.null(coef_list$co)) coef_list$co <- 0
-        
-        message("  Calling efourier_i...")
-        coords <- tryCatch({
-          result <- efourier_i(coef_list, nb.h = n_harmonics, nb.pts = 120)
-          message("  efourier_i succeeded! Result dimensions: ", nrow(result), " x ", ncol(result))
-          result
-        }, error = function(e) {
-          message("  efourier_i failed: ", conditionMessage(e))
-          NULL
-        })
-        
-      } else {
-        # No EFA data available
-        message("ERROR: No EFA data found in model")
-        coords <- NULL
-      }
+      # Reconstruct shape outline using inverse Fourier transform
+      coords <- tryCatch({
+        efourier_i(coef_list, nb.h = n_harmonics, nb.pts = 120)
+      }, error = function(e) {
+        stop("Shape reconstruction failed: ", conditionMessage(e), call. = FALSE)
+      })
       
-      # Final check and return
-      if (is.null(coords)) {
-        message("ERROR: Shape reconstruction failed")
-        return(NULL)
-      }
-      
-      message("Shape reconstruction complete!")
       return(coords)
     }
     
