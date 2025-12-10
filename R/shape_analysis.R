@@ -481,64 +481,66 @@ shape_analysis <- function(shape_dir,
   # Save metadata as human-readable text file
   tryCatch({
     info_lines <- c(
-    "Shape Reconstruction Model Information",
-    "======================================",
-    "",
-    paste("Created:", format(reconstruction_model$metadata$created_date)),
-    paste("Format Version:", reconstruction_model$metadata$format_version),
-    paste("Momocs Version:", reconstruction_model$metadata$momocs_version),
-    paste("R Version:", reconstruction_model$metadata$r_version),
-    "",
-    "Analysis Parameters:",
-    "--------------------",
-    paste("  Normalization:", reconstruction_model$parameters$norm),
-    paste("  Harmonics:", reconstruction_model$parameters$harmonics),
-    paste("  Start Point:", reconstruction_model$parameters$start_point),
-    paste("  Number of Specimens:", reconstruction_model$parameters$n_specimens),
-    paste("  Number of PCs:", reconstruction_model$parameters$n_components),
-    "",
-    "Reconstruction Components:",
-    "-------------------------",
-    paste("  Eigenvectors (rotation):", nrow(reconstruction_model$rotation), "x", ncol(reconstruction_model$rotation)),
-    paste("  Center vector length:", length(reconstruction_model$center)),
-    paste("  Standard deviations:", length(reconstruction_model$sdev)),
-    "",
-    "Variance Explained by PC:",
-    "------------------------"
-  )
-  
-  if (!is.null(reconstruction_model$variance_explained)) {
-    n_show <- min(10, length(reconstruction_model$variance_explained))
-    for (i in 1:n_show) {
-      info_lines <- c(info_lines, sprintf("  PC%d: %.2f%%", i, reconstruction_model$variance_explained[i]))
+      "Shape Reconstruction Model Metadata",
+      "====================================",
+      "",
+      paste("Generated:", format(Sys.time())),
+      "",
+      "Analysis Parameters:",
+      "--------------------",
+      paste("  Normalization:", norm),
+      paste("  Harmonics Used:", ifelse(is.null(n_harmonics), "automatic", n_harmonics)),
+      paste("  Start Point:", start_point),
+      paste("  Number of Specimens:", n_specimens),
+      paste("  Number of PCs:", n_components),
+      paste("  Total Coefficients:", length(pca_results$center)),
+      "",
+      "Reconstruction Components:",
+      "-------------------------",
+      paste("  Eigenvectors (rotation):", nrow(pca_results$rotation), "x", ncol(pca_results$rotation)),
+      paste("  Center vector length:", length(pca_results$center)),
+      paste("  Standard deviations:", length(pca_results$sdev)),
+      "",
+      "Variance Explained by PC:",
+      "------------------------"
+    )
+    
+    if (!is.null(variance_explained)) {
+      n_show <- min(10, length(variance_explained))
+      for (i in 1:n_show) {
+        info_lines <- c(info_lines, sprintf("  PC%d: %.2f%%", i, variance_explained[i]))
+      }
+      cumsum_var <- cumsum(variance_explained)
+      info_lines <- c(info_lines, "", 
+                     sprintf("  Cumulative variance (first 10 PCs): %.2f%%", cumsum_var[min(10, length(cumsum_var))]))
     }
-    cumsum_var <- cumsum(reconstruction_model$variance_explained)
-    info_lines <- c(info_lines, "", 
-                   sprintf("  Cumulative variance (first 10 PCs): %.2f%%", cumsum_var[min(10, length(cumsum_var))]))
-  }
-  
-  info_lines <- c(info_lines, "",
-    "Usage:",
-    "------",
-    "To load this reconstruction model in R:",
-    paste0("  model <- load_reconstruction_csv('", dirname(model_files[1]), "')"),
-    "",
-    "To reconstruct shapes from PC scores:",
-    "  reconstructed_shape <- reconstruct_shape_from_pca(",
-    "    reconstruction_model = model,",
-    "    pc_scores = c(PC1 = 2.0, PC2 = -1.5, ...)",
-    "  )"
-  )
-  
-  # Save text file
-  tryCatch({
-    writeLines(info_lines, con = info_path, useBytes = TRUE)
-    if (verbose) message("  Reconstruction info saved: ", basename(info_path))
+    
+    info_lines <- c(info_lines, "",
+      "Usage:",
+      "------",
+      "To load this reconstruction model in R:",
+      paste0("  model <- load_reconstruction_csv('", output_dir, "')"),
+      "",
+      "The model includes 4 CSV files:",
+      paste0("  - ", output_stem, "_pca_rotation.csv"),
+      paste0("  - ", output_stem, "_pca_center.csv"),
+      paste0("  - ", output_stem, "_pca_sdev.csv"),
+      paste0("  - ", output_stem, "_reconstruction_metadata.txt (this file)")
+    )
+    
+    writeLines(info_lines, con = metadata_path, useBytes = TRUE)
+    if (verbose) message("  Saved: ", basename(metadata_path))
   }, error = function(e) {
-    warning("Failed to save reconstruction info text: ", e$message)
+    warning("Failed to save reconstruction metadata: ", e$message)
   })
   
-  invisible(TRUE)
+  # Return list of created files
+  return(list(
+    rotation = rotation_path,
+    center = center_path,
+    sdev = sdev_path,
+    metadata = metadata_path
+  ))
 }
 
 #' Generate PCA summary
