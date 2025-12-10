@@ -849,11 +849,5 @@ shape_reconstruction_server <- function(id) {
         dev.off()
       }
     )
-    
-    invisible(list(
-      model = loaded_model,
-      shape = reconstructed_shape,
-      batch = batch_shapes
-    ))
   })
 }
