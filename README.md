@@ -6,9 +6,10 @@ HaugShape: Morphometric Shape Analysis and Visualization Tools
 HaugShape is a comprehensive R package for morphometric shape analysis, providing tools for:
 
 - **Shape Analysis**: Elliptical Fourier Analysis (EFA) and Principal Component Analysis (PCA)
+- **Image Processing**: Advanced image splitting and morphing capabilities
 - **Visualization**: Advanced plotting functions for hull plots, contour plots, and boxplots  
 - **Data Processing**: Shape preprocessing, normalization, and statistical analysis
-- **Interactive Tools**: Shiny application for interactive shape analysis
+- **Interactive Tools**: Shiny application for interactive shape analysis and morphing
 
 ## Installation
 
@@ -52,16 +53,37 @@ overview <- Haug_overview(
 
 ## Main Functions
 
+### Shape Analysis
 - `shape_analysis()`: Perform comprehensive shape analysis with EFA and PCA
 - `Haug_overview()`: Generate multi-panel overview plots
-- `run_haug_app()`: Launch interactive Shiny application
 - `shape_plot()`: Create customizable shape plots
 - `cluster_plot()`: Generate cluster analysis plots
+
+### Image Processing & Morphing
+- `split_image()`: Split images at specified positions with mirroring options
+- `morph_shapes()`: Generate morphed shapes using advanced algorithms
+- `morph_shapes_ui()` / `morph_shapes_server()`: Interactive Shiny module for image morphing
+
+### Interactive Application
+- `run_haug_app()`: Launch interactive Shiny application with all features
+
+## New Features: Image Morphing
+
+The package now includes a powerful image morphing module accessible through the Shiny app:
+
+1. **Upload and Preview**: Load images with automatic format detection
+2. **Smart Splitting**: Split images vertically or horizontally at any position
+3. **Mirroring Options**: Mirror left/right or top/bottom halves
+4. **Advanced Morphing**: Three morphing algorithms (Distance Transform, Linear, Spline)
+5. **Interactive Preview**: Animate through morphing sequences
+
+For detailed instructions, see `MORPH_SHAPES_GUIDE.md` or the quick reference in `MORPH_SHAPES_QUICKREF.md`.
 
 ## Requirements
 
 - R >= 4.0.0
-- Required packages: Momocs, ggplot2, dplyr, openxlsx, shiny
+- Required packages: Momocs, ggplot2, dplyr, openxlsx, shiny, shinydashboard
+- Optional packages for morphing: magick, imager, shinyFiles
 
 ## License
 

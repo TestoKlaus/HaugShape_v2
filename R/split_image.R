@@ -386,7 +386,7 @@ split_image <- function(input_paths,
   split_results <- .split_image_at_positions(img, params$split_options, original_width, original_height)
   
   # Apply mirroring
-  mirrored_results <- .apply_mirroring(split_results$parts, params$split_options$mirror_parts)
+  mirrored_results <- .apply_mirroring(split_results$parts, params$split_options$mirror_parts, params$split_options$direction)
   
   # Generate output filenames and save images
   output_paths <- character(length(mirrored_results))
@@ -498,7 +498,7 @@ split_image <- function(input_paths,
 
 #' Apply mirroring to image parts
 #' @noRd
-.apply_mirroring <- function(parts, mirror_parts) {
+.apply_mirroring <- function(parts, mirror_parts, split_direction = "vertical") {
   
   if (mirror_parts == "none") {
     return(parts)
@@ -518,11 +518,13 @@ split_image <- function(input_paths,
     }
     
     if (should_mirror) {
-      # Determine mirroring direction based on typical use case
       # For vertical splits, mirror horizontally (flop)
       # For horizontal splits, mirror vertically (flip)
-      # This is a heuristic and could be made configurable
-      mirrored_parts[[i]] <- magick::image_flop(parts[[i]])
+      if (split_direction == "vertical") {
+        mirrored_parts[[i]] <- magick::image_flop(parts[[i]])
+      } else {
+        mirrored_parts[[i]] <- magick::image_flip(parts[[i]])
+      }
     }
   }
   
@@ -593,16 +595,16 @@ split_image <- function(input_paths,
 #' @noRd
 .save_split_image <- function(img, output_path, format, processing_options) {
   
-  # Set quality for JPEG
+  # Convert format if needed
   if (tolower(format) %in% c("jpg", "jpeg")) {
-    img <- magick::image_format(img, format = "jpeg")
-    img <- magick::image_quality(img, quality = processing_options$quality)
+    img <- magick::image_convert(img, format = "jpeg")
+    # Write image with quality setting for JPEG
+    magick::image_write(img, path = output_path, quality = processing_options$quality)
   } else {
-    img <- magick::image_format(img, format = format)
+    img <- magick::image_convert(img, format = format)
+    # Write image
+    magick::image_write(img, path = output_path)
   }
-  
-  # Write image
-  magick::image_write(img, path = output_path)
 }
 
 # Summary Generation ----

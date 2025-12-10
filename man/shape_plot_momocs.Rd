@@ -20,7 +20,7 @@ shape_plot_momocs(
 )
 }
 \arguments{
-\item{pca_result}{The PCA result object from Momocs::PCA().}
+\item{pca_result}{The PCA result object from PCA().}
 
 \item{coo_object}{The Coo object containing shape coordinate data.}
 

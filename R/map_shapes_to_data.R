@@ -122,12 +122,6 @@ map_shapes_to_data <- function(data,
 #' @noRd
 .validate_shape_mapping_inputs <- function(data, id_col, shape_folder, shape_col, verbose) {
   
-  # Check Momocs package
-  if (!requireNamespace("Momocs", quietly = TRUE)) {
-    stop("Package 'Momocs' is required but not installed. Please install with: install.packages('Momocs')",
-         call. = FALSE)
-  }
-  
   # Check data
   if (!is.data.frame(data)) {
     stop("'data' must be a data frame", call. = FALSE)
@@ -361,8 +355,8 @@ map_shapes_to_data <- function(data,
   
   tryCatch({
     # Import using Momocs
-    shape_data <- Momocs::import_jpg(file_path)
-    shape_out <- Momocs::Out(shape_data)
+    shape_data <- import_jpg(file_path)
+    shape_out <- Out(shape_data)
     
     # Validate if requested
     if (params$validate_shapes) {

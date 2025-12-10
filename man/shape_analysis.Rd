@@ -13,7 +13,6 @@ shape_analysis(
   start_point = "left",
   harmonics = NULL,
   align_orientation = FALSE,
-  use_raw_shapes = FALSE,
   verbose = TRUE
 )
 }
@@ -21,9 +20,10 @@ shape_analysis(
 \item{shape_dir}{A character string specifying the directory containing shape files
 (images in JPG format). The directory must exist and contain at least one valid JPG file.}
 
-\item{norm}{Logical. Should the Fourier descriptors be normalized? If TRUE, shapes are
-normalized to the first harmonic. If FALSE, shapes are normalized to the longest radius.
-Default is TRUE.}
+\item{norm}{Logical. Controls EFA normalization. If TRUE, Fourier descriptors are
+normalized to the first harmonic ("align by first harmonic"). If FALSE, they are
+normalized to the longest radius. Shapes are always centered, scaled, and slid to
+the specified start direction prior to EFA. Default is TRUE.}
 
 \item{output_dir}{A character string specifying the directory where the Excel file will be saved.
 If NULL, the file will be saved in the working directory.}
@@ -45,11 +45,14 @@ normalization. Options are "up", "left", "down", or "right". Default is "left".}
 A list containing:
   \describe{
     \item{pca_results}{The PCA object from Momocs}
+    \item{efa_results}{The EFA coefficients object from Momocs}
     \item{scores}{Data frame of PCA scores}
     \item{summary}{Character string of PCA summary}
     \item{output_path}{Path where Excel results were saved}
     \item{summary_txt_path}{Path to saved PCA summary .txt file}
     \item{pc_plot_jpg_path}{Path to saved PC contributions .jpg}
+    \item{reconstruction_model_path}{Path to RDS file containing reconstruction model}
+    \item{reconstruction_info_path}{Path to text file with reconstruction info}
     \item{metadata}{List of analysis metadata (n_shapes, harmonics, etc.)}
   }
 }
@@ -61,7 +64,10 @@ displays a plot of PC contributions, and saves PCA scores to an Excel file.
 \details{
 The function uses the `Momocs` package to import, normalize, and analyze shape outlines:
 - **Import**: Reads JPG/JPEG files and converts to shape outlines
-- **Normalization**: Centers, scales, and aligns shapes to consistent orientation
+- **Pre-processing**: Centers, scales, and slides shapes to a consistent start
+  direction (up/left/down/right)
+- **Normalization**: EFA descriptors normalized to first harmonic when `norm = TRUE`,
+  or to the longest radius when `norm = FALSE`
 - **Elliptical Fourier Analysis (EFA)**: Generates Fourier descriptors for the shape outlines
 - **Principal Component Analysis (PCA)**: Decomposes Fourier descriptors into principal components
 

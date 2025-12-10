@@ -665,18 +665,17 @@ complete_halved_shape <- function(input_paths,
   # Preserve transparency if requested and format supports it
   if (processing_options$preserve_transparency && tolower(format) %in% c("png", "tiff")) {
     # Keep as-is for transparency-supporting formats
-    img <- magick::image_format(img, format = format)
+    img <- magick::image_convert(img, format = format)
+    magick::image_write(img, path = output_path)
   } else if (tolower(format) %in% c("jpg", "jpeg")) {
     # For JPEG, remove transparency and set quality
     img <- magick::image_background(img, "white")  # Set white background
-    img <- magick::image_format(img, format = "jpeg")
-    img <- magick::image_quality(img, quality = processing_options$quality)
+    img <- magick::image_convert(img, format = "jpeg")
+    magick::image_write(img, path = output_path, quality = processing_options$quality)
   } else {
-    img <- magick::image_format(img, format = format)
+    img <- magick::image_convert(img, format = format)
+    magick::image_write(img, path = output_path)
   }
-  
-  # Write image
-  magick::image_write(img, path = output_path)
 }
 
 # Summary Generation ----

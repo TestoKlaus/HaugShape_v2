@@ -19,7 +19,10 @@ ui <- dashboardPage(
   dashboardSidebar(
     sidebarMenu(
       menuItem("1. Image Processing", tabName = "images", icon = icon("image")),
-      menuItem("2. Shape Analysis", tabName = "shape", icon = icon("chart-area")),
+      menuItem("2. Shape Analysis", tabName = "shape", icon = icon("chart-area"),
+        menuSubItem("Run Analysis", tabName = "shape"),
+        menuSubItem("Reconstruct Shapes", tabName = "reconstruct")
+      ),
       menuItem("3. Data Import", tabName = "import", icon = icon("upload")),
       menuItem("4. Plotting", tabName = "plotting", icon = icon("chart-line"))
     )
@@ -37,6 +40,11 @@ ui <- dashboardPage(
       # Shape Analysis Tab
       tabItem(tabName = "shape",
         shape_analysis_ui("shape_an")
+      ),
+      
+      # Shape Reconstruction Tab
+      tabItem(tabName = "reconstruct",
+        shape_reconstruction_ui("shape_recon")
       ),
 
       # Data Import Tab
@@ -71,6 +79,9 @@ server <- function(input, output, session) {
 
   # Initialize shape analysis module
   shape_analysis_server("shape_an")
+  
+  # Initialize shape reconstruction module
+  shape_reconstruction_server("shape_recon")
 
   # Initialize plotting module (uses data from Data Import)
   plotting_server("plotting", data_reactive = imported$data)
