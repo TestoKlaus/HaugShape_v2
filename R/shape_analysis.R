@@ -436,7 +436,14 @@ shape_analysis <- function(shape_dir,
     center = pca_results$center,          # Centering values
     sdev = pca_results$sdev,              # Standard deviations
     
-    # EFA results - save the COMPLETE OutCoe object for proper reconstruction
+    # EFA components - explicitly extract from OutCoe object
+    # This ensures the components are properly preserved during RDS save/load
+    efa_coe = efa_results$coe,            # Coefficient matrix [n_specimens x n_coefficients]
+    efa_method = efa_results$method,      # Method used (e.g., "efourier")
+    efa_norm = efa_results$norm,          # Normalization flag (TRUE/FALSE)
+    efa_fac = efa_results$fac,            # Factor data frame (if any)
+    
+    # Also save the COMPLETE OutCoe object as backup for compatibility
     efa_object = efa_results,             # Complete EFA object with all attributes
     
     # Shape metadata for denormalization (our manual capture - backup method)

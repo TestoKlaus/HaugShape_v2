@@ -2,100 +2,134 @@
 
 ## Problem Identified
 
-The shape reconstruction feature was producing garbled shapes (random assembly of lines) instead of proper shape outlines. The screenshot shows the issue clearly.
+The shape reconstruction feature was producing garbled shapes (random assembly of lines) instead of proper shape outlines. The debug output showed the reconstruction was failing.
 
-## Root Cause
+## Root Cause Analysis
 
-The problem was a **normalization mismatch** in the Elliptical Fourier Analysis (EFA) reconstruction:
+Based on the debug output:
+```
+Parameters: norm=FALSE, harmonics=automatic, n_harmonics_used=11
+Attempting Momocs efourier_i with complete object...
+Momocs efourier_i failed: Ersetzung hat Länge 0
+```
 
-1. **Forward Transform (Analysis)**: When `shape_analysis()` runs with `norm=TRUE` (default), the `efourier()` function:
-   - Computes raw Fourier coefficients: `an, bn, cn, dn`
-   - Applies `efourier_norm()` to normalize them to: `A, B, C, D`
-   - Stores only the normalized coefficients in the PCA model
+The problem was:
 
-2. **Inverse Transform (Reconstruction)**: The `efourier_i()` function expects:
-   - Raw (non-normalized) coefficients: `an, bn, cn, dn`
-   - NOT normalized coefficients: `A, B, C, D`
+1. **Incorrect Input Type**: The code was trying to pass an `OutCoe` object to `efourier_i()`, but `efourier_i()` expects a **simple list** with components: `an`, `bn`, `cn`, `dn`, `ao`, `co`
 
-3. **The Bug**: The reconstruction code was passing normalized `A, B, C, D` coefficients directly to `efourier_i()`, which treated them as if they were raw `an, bn, cn, dn` coefficients. This caused incorrect shape reconstruction.
+2. **Missing ao/co Components**: The coefficient list created by `coeff_split()` didn't include the DC offset components (`ao` and `co`) that `efourier_i` requires
 
 ## Technical Details
 
-### Normalization Formula (from `efourier_norm`)
+### efourier_i Function Requirements
 
-The normalization applies three transformations to raw coefficients:
-1. **Phase alignment** (`theta`): Aligns the first harmonic
-2. **Size normalization** (`size = 1/scale`): Normalizes by the first ellipse magnitude
-3. **Rotation** (`psi`): Orients to a standard reference frame
+From `momocs_core-out-efourier.R` (lines 273-300), `efourier_i` expects:
 
 ```r
-normalized = size * rotation_matrix * raw * phase_shift_matrix
+efourier_i <- function(ef, nb.h, nb.pts = 120) {
+  if (is.null(ef$ao))
+    ef$ao <- 0
+  if (is.null(ef$co))
+    ef$co <- 0
+  an <- ef$an  # <-- Needs these as list components
+  bn <- ef$bn
+  cn <- ef$cn
+  dn <- ef$dn
+  ao <- ef$ao
+  co <- ef$co
+  # ... reconstruction logic
+}
 ```
 
-### Denormalization Formula (Inverse)
+### The coeff_split Function
 
-To reconstruct properly, we need:
+The `coeff_split()` function (from `momocs_core-utils.R`) converts a coefficient vector into a list:
+- Input: Vector like `[A1, A2, ..., An, B1, ..., Bn, C1, ..., Cn, D1, ..., Dn]`
+- Output: List with `$an`, `$bn`, `$cn`, `$dn` (but NOT `$ao` or `$co`)
+
+### Previous Bug
+
+The old code tried:
 ```r
-raw = (1/size) * inverse(rotation_matrix) * normalized * inverse(phase_shift_matrix)
+reconstructed_coe <- model$efa_object
+reconstructed_coe$coe <- matrix(reconstructed_coefs, nrow = 1)
+result <- efourier_i(reconstructed_coe, ...)  # WRONG! OutCoe object, not a list
 ```
 
 ## Solution Implemented
 
-### 1. Created Denormalization Function
+### 1. Use coeff_split Properly
 
-Added `.efourier_denorm()` helper function in `shape_reconstruction_module.R` that:
-- Takes normalized coefficients `A, B, C, D` and normalization parameters (`size`, `theta`, `psi`)
-- Reverses the normalization transformations
-- Returns raw coefficients `an, bn, cn, dn`
+Split the reconstructed coefficient vector into the required list structure:
+```r
+coef_list <- coeff_split(reconstructed_coefs, nb.h = n_harmonics, cph = 4)
+```
 
-### 2. Updated Reconstruction Logic
+### 2. Add Missing ao/co Components
 
-Modified `.reconstruct_single_shape()` to:
-1. Detect if coefficients are normalized (check `model$efa_object$norm`)
-2. If normalized:
-   - Calculate normalization parameters from the first harmonic
-   - Call `.efourier_denorm()` to convert `A, B, C, D` → `an, bn, cn, dn`
-3. Pass the (now raw) coefficients to `efourier_i()`
+Before calling `efourier_i`, ensure the list has all required components:
+```r
+if (is.null(coef_list$ao)) coef_list$ao <- 0
+if (is.null(coef_list$co)) coef_list$co <- 0
+```
+
+These DC offset values are typically 0 after centering, which is standard in morphometric analysis.
+
+### 3. Handle Both Normalized and Non-Normalized Cases
+
+The code now checks `model$efa_object$norm`:
+- **If `norm=TRUE`**: Denormalizes A, B, C, D → an, bn, cn, dn before reconstruction
+- **If `norm=FALSE`**: Uses coefficients directly (they're already in raw form)
 
 ### Code Changes
 
 **File**: `R/shape_reconstruction_module.R`
 
-**Added**:
-```r
-.efourier_denorm <- function(A, B, C, D, size, theta, psi) {
-  # Inverse of normalization transformations
-  # Returns list with an, bn, cn, dn
-}
-```
-
-**Modified**: `.reconstruct_single_shape()` to:
-- Check normalization flag
-- Calculate normalization parameters from first harmonic coefficients
-- Denormalize before calling `efourier_i()`
+**Key changes**:
+1. Properly use `coeff_split()` to create the list structure
+2. Add `ao` and `co` components (set to 0)
+3. Pass the simple list (not OutCoe object) to `efourier_i()`
+4. Added detailed debug messages to track the reconstruction process
 
 ## Why This Matters
 
-Elliptical Fourier Analysis with normalization (`norm=TRUE`) is the default and recommended approach in Momocs because it:
-- Removes size, position, and rotation effects
-- Makes shapes comparable across specimens
-- Improves PCA interpretation
+The `efourier_i` function is the **inverse Elliptical Fourier Transform** - it converts Fourier coefficients back into (x, y) coordinates. It requires:
+- **Correct input structure**: Simple list with named components
+- **Complete data**: All 6 components (an, bn, cn, dn, ao, co)
+- **Raw coefficients**: If normalized, they must be denormalized first
 
-However, this means the coefficients stored in the model are in "normalized space", and they must be transformed back to "real space" before reconstructing actual shape coordinates.
+The function reconstructs the shape by summing harmonics:
+```r
+x(θ) = ao/2 + Σ[an*cos(nθ) + bn*sin(nθ)]
+y(θ) = co/2 + Σ[cn*cos(nθ) + dn*sin(nθ)]
+```
 
 ## Testing
 
-To test the fix:
-1. Run shape analysis with `norm=TRUE` (default)
-2. Load the reconstruction model
-3. Set PC scores to zero (should reconstruct mean shape)
-4. Verify the reconstructed shape looks like a proper outline, not random lines
+To verify the fix:
+1. Load a reconstruction model (created by `shape_analysis()`)
+2. Set all PC scores to zero (should reconstruct the mean shape)
+3. Check that the shape outline appears correct (not random lines)
+4. Verify the aspect ratio is reasonable (not extreme like 0.064)
+
+## Debug Output Interpretation
+
+The successful reconstruction should show:
+```
+Using complete EFA object for reconstruction
+Number of harmonics: 11
+Coefficients normalized: FALSE
+Calling efourier_i with list components: an, bn, cn, dn, ao, co
+efourier_i succeeded! Result dimensions: 120 x 2
+Shape reconstruction complete!
+```
 
 ## References
 
 - `efourier()`: Lines 88-186 in `R/momocs_core-out-efourier.R`
-- `efourier_norm()`: Lines 197-240 in `R/momocs_core-out-efourier.R`
+- `efourier_norm()`: Lines 197-240 in `R/momocs_core-out-efourier.R`  
 - `efourier_i()`: Lines 273-300 in `R/momocs_core-out-efourier.R`
+- `coeff_split()`: Lines 59-70 in `R/momocs_core-utils.R`
 - Claude, J. (2008). *Morphometrics with R*. Springer.
 
 ## Date
