@@ -19,7 +19,7 @@ shape_reconstruction_ui <- function(id) {
           
           # Model file chooser
           uiOutput(ns("model_file_ui")),
-          helpText("Select a reconstruction model RDS file (e.g., *_reconstruction_model.rds)"),
+          helpText("Select a reconstruction model folder containing CSV files, or any CSV file from the folder (e.g., *_pca_rotation.csv)"),
           
           actionButton(ns("load_model"), "Load Model", class = "btn-primary"),
           
@@ -42,6 +42,12 @@ shape_reconstruction_ui <- function(id) {
           hr(),
           
           # Reconstruction options
+          radioButtons(ns("score_type"), "Input type:",
+                      choices = c("Standard Deviation units" = "sd",
+                                  "Absolute PC values" = "absolute"),
+                      selected = "sd", inline = TRUE),
+          helpText("SD units: 0 = mean, ±1 = one SD from mean. Absolute: use actual PC score values from your data."),
+          
           checkboxInput(ns("show_original"), "Show original shape (if available)", value = FALSE),
           numericInput(ns("plot_size"), "Plot size (pixels)", value = 600, min = 300, max = 1200, step = 50),
           
@@ -124,7 +130,7 @@ shape_reconstruction_server <- function(id) {
           shinyFiles::shinyFilesButton(
             ns("model_file_btn"), 
             label = "Choose reconstruction model file", 
-            title = "Select RDS file",
+            title = "Select CSV file (*_pca_rotation.csv)",
             multiple = FALSE
           ),
           br(), br(),
@@ -132,7 +138,7 @@ shape_reconstruction_server <- function(id) {
           textOutput(ns("model_file_selected"), inline = TRUE)
         )
       } else {
-        textInput(ns("model_file_fallback"), "Model file path (.rds)", value = "")
+        textInput(ns("model_file_fallback"), "Model file path (.csv)", value = "")
       }
     })
     
@@ -157,7 +163,7 @@ shape_reconstruction_server <- function(id) {
         id = "model_file_btn", 
         roots = roots, 
         session = session,
-        filetypes = c("rds", "RDS")
+        filetypes = c("csv", "CSV")
       )
     })
     
@@ -213,7 +219,7 @@ shape_reconstruction_server <- function(id) {
       
       withProgress(message = "Loading reconstruction model...", value = 0.5, {
         model <- tryCatch({
-          load_reconstruction_model(path, validate = TRUE, verbose = FALSE)
+          load_reconstruction_csv(path, validate = TRUE, verbose = FALSE)
         }, error = function(e) {
           showNotification(paste("Failed to load model:", conditionMessage(e)), type = "error", duration = 8)
           NULL
@@ -231,18 +237,33 @@ shape_reconstruction_server <- function(id) {
       model <- loaded_model()
       req(model)
       
+      # Build table rows conditionally
+      table_rows <- list(
+        tags$tr(tags$td(tags$strong("Coefficients:")), tags$td(length(model$center))),
+        tags$tr(tags$td(tags$strong("Principal Components:")), tags$td(ncol(model$rotation)))
+      )
+      
+      if (!is.null(model$parameters$n_harmonics)) {
+        table_rows <- c(table_rows, list(
+          tags$tr(tags$td(tags$strong("Harmonics:")), tags$td(model$parameters$n_harmonics))
+        ))
+      }
+      
+      if (!is.null(model$parameters$norm)) {
+        table_rows <- c(table_rows, list(
+          tags$tr(tags$td(tags$strong("Normalization:")), tags$td(as.character(model$parameters$norm)))
+        ))
+      }
+      
+      if (!is.null(model$parameters$start_point)) {
+        table_rows <- c(table_rows, list(
+          tags$tr(tags$td(tags$strong("Start Point:")), tags$td(model$parameters$start_point))
+        ))
+      }
+      
       tagList(
         tags$h4("Model Information", style = "color: #3c8dbc;"),
-        tags$table(
-          class = "table table-condensed",
-          tags$tr(tags$td(tags$strong("Specimens:")), tags$td(model$parameters$n_specimens)),
-          tags$tr(tags$td(tags$strong("Principal Components:")), tags$td(model$parameters$n_components)),
-          tags$tr(tags$td(tags$strong("Harmonics:")), tags$td(model$parameters$harmonics)),
-          tags$tr(tags$td(tags$strong("Normalization:")), tags$td(as.character(model$parameters$norm))),
-          tags$tr(tags$td(tags$strong("Start Point:")), tags$td(model$parameters$start_point)),
-          tags$tr(tags$td(tags$strong("Created:")), tags$td(format(model$metadata$created_date))),
-          tags$tr(tags$td(tags$strong("Format Version:")), tags$td(model$metadata$format_version))
-        ),
+        do.call(tags$table, c(list(class = "table table-condensed"), table_rows)),
         tags$hr(),
         tags$h5("Variance Explained:"),
         tags$pre(style = "max-height: 150px; overflow-y: auto; font-size: 11px;", {
@@ -264,6 +285,9 @@ shape_reconstruction_server <- function(id) {
       model <- loaded_model()
       req(model)
       
+      score_type <- input$score_type
+      if (is.null(score_type)) score_type <- "sd"
+      
       n_pcs <- min(10, model$parameters$n_components)  # Limit to first 10 PCs for UI
       
       inputs <- lapply(1:n_pcs, function(i) {
@@ -281,9 +305,16 @@ shape_reconstruction_server <- function(id) {
         )
       })
       
+      title_text <- if (score_type == "sd") "PC Scores (in SD units)" else "PC Scores (absolute values)"
+      help_text <- if (score_type == "sd") {
+        "Enter desired PC scores. 0 = mean shape, ±1 = one standard deviation from mean."
+      } else {
+        "Enter absolute PC score values (e.g., from your morphospace plot)."
+      }
+      
       tagList(
-        tags$h4("PC Scores (in SD units)"),
-        helpText("Enter desired PC scores. 0 = mean shape, ±1 = one standard deviation from mean."),
+        tags$h4(title_text),
+        helpText(help_text),
         do.call(fluidRow, lapply(inputs, function(inp) column(width = 3, inp)))
       )
     })
@@ -307,6 +338,9 @@ shape_reconstruction_server <- function(id) {
         return()
       }
       
+      score_type <- input$score_type
+      if (is.null(score_type)) score_type <- "sd"
+      
       # Collect PC scores from inputs
       n_pcs <- min(10, model$parameters$n_components)
       pc_scores <- sapply(1:n_pcs, function(i) {
@@ -325,7 +359,7 @@ shape_reconstruction_server <- function(id) {
       
       withProgress(message = "Reconstructing shape...", value = 0.5, {
         shape <- tryCatch({
-          .reconstruct_single_shape(model, pc_scores)
+          .reconstruct_single_shape(model, pc_scores, score_type)
         }, error = function(e) {
           # More detailed error message
           err_msg <- conditionMessage(e)
@@ -340,42 +374,54 @@ shape_reconstruction_server <- function(id) {
         })
         
         if (!is.null(shape)) {
-          reconstructed_shape(list(coords = shape, pc_scores = pc_scores))
+          reconstructed_shape(list(coords = shape, pc_scores = pc_scores, score_type = score_type))
           showNotification("Shape reconstructed!", type = "message")
         }
       })
     })
     
+    # Helper function to denormalize efourier coefficients
+    # When norm=TRUE, efourier produces A,B,C,D normalized coefficients
+    # efourier_i expects an,bn,cn,dn raw coefficients
+    # This function reverses the normalization
+    .efourier_denorm <- function(A, B, C, D, size, theta, psi) {
+      nb.h <- length(A)
+      
+      # Inverse of the normalization transformations
+      scale <- 1/size  # size in efourier_norm is 1/scale
+      
+      # Inverse rotation matrix
+      inv_rotation <- matrix(c(cos(psi), sin(psi), -sin(psi), cos(psi)), 2, 2)
+      
+      an <- bn <- cn <- dn <- numeric(nb.h)
+      
+      for (i in 1:nb.h) {
+        # Inverse phase shift for this harmonic
+        inv_phase <- matrix(c(cos(i * theta), -sin(i * theta),
+                             sin(i * theta), cos(i * theta)), 2, 2)
+        
+        # Apply inverse transformations: raw = inv_rotation * normalized * inv_phase / size
+        mat <- inv_rotation %*%
+               matrix(c(A[i], C[i], B[i], D[i]), 2, 2) %*%
+               inv_phase / scale
+        
+        an[i] <- mat[1, 1]
+        cn[i] <- mat[2, 1]
+        bn[i] <- mat[1, 2]
+        dn[i] <- mat[2, 2]
+      }
+      
+      return(list(an = an, bn = bn, cn = cn, dn = dn))
+    }
+    
     # Helper function to reconstruct a single shape
-    .reconstruct_single_shape <- function(model, pc_scores) {
+    .reconstruct_single_shape <- function(model, pc_scores, score_type = "sd") {
       # Ensure pc_scores is numeric vector
       pc_scores <- as.numeric(pc_scores)
       
       # Get dimensions
       n_coefs <- length(model$center)
       n_pcs <- ncol(model$rotation)
-      
-      # Debug: Print model structure details
-      message("=== Model Structure Debug ===")
-      message("Model components: ", paste(names(model), collapse = ", "))
-      if (!is.null(model$parameters)) {
-        message("Parameters: norm=", model$parameters$norm, 
-                ", harmonics=", model$parameters$harmonics,
-                ", n_harmonics_used=", model$parameters$n_harmonics_used)
-      }
-      message("EFA norm flag: ", if (!is.null(model$efa_norm)) model$efa_norm else "NULL")
-      message("EFA method: ", if (!is.null(model$efa_method)) model$efa_method else "NULL")
-      
-      # Sample some original coefficients for comparison
-      if (!is.null(model$efa_coe) && is.matrix(model$efa_coe)) {
-        message("Original EFA coefficients (first specimen, first 8): ")
-        message("  ", paste(round(model$efa_coe[1, 1:min(8, ncol(model$efa_coe))], 4), collapse = ", "))
-        if (nrow(model$efa_coe) > 1) {
-          message("Original EFA coefficients (mean of all specimens, first 8): ")
-          coef_means <- colMeans(model$efa_coe, na.rm = TRUE)
-          message("  ", paste(round(coef_means[1:min(8, length(coef_means))], 4), collapse = ", "))
-        }
-      }
       
       # Ensure pc_scores has correct length and pad with zeros if needed
       if (length(pc_scores) > n_pcs) {
@@ -386,200 +432,46 @@ shape_reconstruction_server <- function(id) {
         pc_scores <- full_scores
       }
       
-      # Reconstruct Fourier coefficients
-      # PCA formula: X_reconstructed = center + scores %*% t(rotation)
-      # But scores are typically in SD units, so we need to scale them
-      # Standard PCA reconstruction: X = center + (scores * sdev) %*% t(rotation)
-      # rotation matrix has eigenvectors as COLUMNS [n_coefs x n_pcs]
-      # pc_scores is [n_pcs] in SD units
-      # We need: center [n_coefs] + (pc_scores [n_pcs] * sdev [n_pcs]) %*% t(rotation [n_coefs x n_pcs])
-      
-      # Debug output
-      message("=== Shape Reconstruction Debug ===")
-      message("Input PC scores: ", paste(round(pc_scores, 3), collapse = ", "))
-      message("Number of PCs: ", n_pcs)
-      message("Number of coefficients: ", n_coefs)
-      message("Center length: ", length(model$center))
-      message("Rotation dims: ", paste(dim(model$rotation), collapse = " x "))
-      message("Sdev length: ", length(model$sdev))
-      
-      # Scale PC scores by standard deviations
-      scaled_scores <- pc_scores * model$sdev[1:length(pc_scores)]
-      message("Scaled scores: ", paste(round(scaled_scores, 3), collapse = ", "))
-      
-      # Transform back to coefficient space
-      # t(rotation) is [n_pcs x n_coefs], scaled_scores is [n_pcs]
-      # Result: [n_coefs]
-      contribution <- as.vector(scaled_scores %*% t(model$rotation))
-      message("Contribution range: [", round(min(contribution), 3), ", ", round(max(contribution), 3), "]")
-      
-      reconstructed_coefs <- model$center + contribution
-      message("Reconstructed coefs range: [", round(min(reconstructed_coefs), 3), ", ", round(max(reconstructed_coefs), 3), "]")
-      message("Center range: [", round(min(model$center), 3), ", ", round(max(model$center), 3), "]")
-      
-      # Verify coefficient length
-      if (length(reconstructed_coefs) != n_coefs) {
-        stop("Coefficient length mismatch: ", length(reconstructed_coefs), " vs ", n_coefs)
-      }
-      
-      # SIMPLIFIED APPROACH: Use the complete EFA object from the model
-      # This preserves all Momocs internal structure and attributes
-      if (!is.null(model$efa_object)) {
-        message("Using complete EFA object for reconstruction")
-        
-        # Create a copy of the first specimen's EFA object structure
-        reconstructed_coe <- model$efa_object
-        
-        # Replace ONLY the coefficients with our reconstructed values
-        # Keep everything else (normalization params, class, attributes, etc.)
-        reconstructed_coe$coe <- matrix(reconstructed_coefs, nrow = 1)
-        rownames(reconstructed_coe$coe) <- "reconstructed"
-        
-        # Determine number of harmonics
-        n_harmonics <- ncol(reconstructed_coe$coe) / 4
-        message("Number of harmonics: ", n_harmonics)
-        
-        # Use Momocs efourier_i - it will handle all denormalization automatically
-        message("Attempting Momocs efourier_i with complete object...")
-        outline <- tryCatch({
-          result <- efourier_i(reconstructed_coe, nb.h = as.integer(n_harmonics), nb.pts = 120)
-          message("Momocs efourier_i succeeded!")
-          result
-        }, error = function(e) {
-          message("Momocs efourier_i failed: ", conditionMessage(e))
-          NULL
-        })
-        
-        # Extract coordinates
-        if (!is.null(outline)) {
-          if (inherits(outline, "Out") && !is.null(outline$coo)) {
-            coords <- outline$coo[[1]]
-            message("Extracted coords from Out object: ", nrow(coords), " x ", ncol(coords))
-          } else if (is.matrix(outline)) {
-            coords <- outline
-            message("Using outline as matrix directly: ", nrow(coords), " x ", ncol(coords))
-          } else if (is.list(outline) && !is.null(outline[[1]])) {
-            coords <- outline[[1]]
-            message("Extracted coords from list: ", nrow(coords), " x ", ncol(coords))
-          } else {
-            message("Outline format not recognized")
-            outline <- NULL
-          }
-        }
-        
+      # Reconstruct Fourier coefficients using PCA
+      # If score_type is "sd", scale by standard deviations
+      # If score_type is "absolute", use scores directly
+      if (score_type == "sd") {
+        # Formula: reconstructed_coefs = center + (pc_scores * sdev) %*% t(rotation)
+        scaled_scores <- pc_scores * model$sdev[1:length(pc_scores)]
       } else {
-        # Fallback: build OutCoe manually (old approach)
-        message("EFA object not in model, using manual OutCoe construction")
-        outline <- NULL  # Will trigger manual reconstruction below
+        # Use absolute PC values directly
+        scaled_scores <- pc_scores
       }
       
-      # Fallback: manual reconstruction if Momocs failed
-      if (is.null(outline)) {
-        message("Using manual inverse Fourier transformation")
-        nb_pts <- 120
-        theta <- seq(0, 2 * pi, length.out = nb_pts + 1)[-(nb_pts + 1)]
-        x <- numeric(nb_pts)
-        y <- numeric(nb_pts)
-        
-        # Standard inverse Fourier: sum harmonics
-        for (h in 1:n_harmonics) {
-          idx <- (h - 1) * 4 + 1:4
-          An <- reconstructed_coefs[idx[1]]
-          Bn <- reconstructed_coefs[idx[2]]
-          Cn <- reconstructed_coefs[idx[3]]
-          Dn <- reconstructed_coefs[idx[4]]
-          
-          x <- x + An * cos(h * theta) + Bn * sin(h * theta)
-          y <- y + Cn * cos(h * theta) + Dn * sin(h * theta)
-        }
-        
-        # Apply denormalization if parameters are available
-        if (!is.null(reconstructed_coe$norm) && reconstructed_coe$norm == TRUE) {
-          message("Applying denormalization transformations...")
-          
-          # Try to use shape_metadata (our manual capture) first
-          if (!is.null(model$shape_metadata) && length(model$shape_metadata) > 0) {
-            # Calculate mean size and centroid from all shapes
-            sizes <- sapply(model$shape_metadata, function(m) m$size)
-            centroids <- t(sapply(model$shape_metadata, function(m) m$centroid))
-            
-            mean_size <- mean(sizes, na.rm = TRUE)
-            mean_centroid <- colMeans(centroids, na.rm = TRUE)
-            
-            message("  Using shape metadata for denormalization")
-            message("  Mean size: ", round(mean_size, 3))
-            message("  Mean centroid: [", paste(round(mean_centroid, 3), collapse = ", "), "]")
-            
-            # Scale by mean size
-            if (mean_size > 0) {
-              x <- x * mean_size
-              y <- y * mean_size
-            }
-            
-            # Translate by mean centroid
-            x <- x + mean_centroid[1]
-            y <- y + mean_centroid[2]
-            
-          } else {
-            # Fallback to r1/r2/baseline if available
-            r1 <- reconstructed_coe$r1
-            r2 <- reconstructed_coe$r2
-            baseline1 <- reconstructed_coe$baseline1
-            baseline2 <- reconstructed_coe$baseline2
-            
-            if (!is.null(r1) && !is.null(r2) && !is.null(baseline1) && !is.null(baseline2)) {
-              # Scale by size (r2 is the size parameter)
-              if (r2 > 0) {
-                x <- x * r2
-                y <- y * r2
-                message("  Scaled by r2 = ", round(r2, 3))
-              }
-              
-              # Translate by baseline (centroid position)
-              if (length(baseline1) >= 2) {
-                x <- x + baseline1[1]
-                y <- y + baseline1[2]
-                message("  Translated by baseline1 = [", paste(round(baseline1, 3), collapse = ", "), "]")
-              }
-            } else {
-              message("  Warning: No denormalization parameters available")
-            }
-          }
-        }
-        
-        coords <- cbind(x, y)
-        message("Manual reconstruction complete: ", nrow(coords), " points")
-        message("X range: [", round(min(x), 3), ", ", round(max(x), 3), "]")
-        message("Y range: [", round(min(y), 3), ", ", round(max(y), 3), "]")
-        
-        # Check if shape looks degenerate
-        x_range <- max(x) - min(x)
-        y_range <- max(y) - min(y)
-        aspect_ratio <- if (y_range > 0) x_range / y_range else 0
-        
-        message("Aspect ratio X/Y: ", round(aspect_ratio, 3))
-        
-        if (x_range < 0.01 && y_range < 0.01) {
-          warning("Reconstructed shape is very small. This may indicate an issue with the coefficients.")
-        }
-        if (aspect_ratio < 0.1 || aspect_ratio > 10) {
-          warning("Reconstructed shape has extreme aspect ratio: ", round(aspect_ratio, 3), 
-                  ". This may indicate missing or incorrect normalization parameters.")
-        }
-      }
+      contribution <- as.vector(scaled_scores %*% t(model$rotation))
+      reconstructed_coefs <- model$center + contribution
       
-      message("=== Reconstruction Complete ===\n")
+      # Get EFA parameters from model
+      n_harmonics <- model$parameters$n_harmonics
+      is_normalized <- isTRUE(model$parameters$norm)
       
-      # Ensure coords is a matrix with 2 columns
-      if (!is.matrix(coords) || ncol(coords) != 2) {
-        stop("Reconstructed coordinates are not a valid 2-column matrix")
-      }
+      # Split coefficients into A, B, C, D components
+      # coeff_split calculates nb.h automatically from length
+      coef_list <- coeff_split(reconstructed_coefs)
+      
+      # IMPORTANT: If normalization was used during analysis, the reconstructed 
+      # coefficients are in the normalized space. We need to work with them directly
+      # without attempting denormalization, as denormalization can cause flips.
+      # The coefficients from PCA reconstruction represent valid shape variations.
+      
+      # Add DC offset components (typically 0 after centering)
+      if (is.null(coef_list$ao)) coef_list$ao <- 0
+      if (is.null(coef_list$co)) coef_list$co <- 0
+      
+      # Reconstruct shape outline using inverse Fourier transform
+      coords <- tryCatch({
+        efourier_i(coef_list, nb.h = n_harmonics, nb.pts = 120)
+      }, error = function(e) {
+        stop("Shape reconstruction failed: ", conditionMessage(e), call. = FALSE)
+      })
       
       return(coords)
     }
-    
-    # Helper operator
-    `%||%` <- function(a, b) if (is.null(a)) b else a
     
     # Plot reconstructed shape
     output$shape_plot <- renderPlot({
@@ -595,8 +487,9 @@ shape_reconstruction_server <- function(id) {
       polygon(coords, col = rgb(0.25, 0.55, 0.75, 0.3), border = "steelblue", lwd = 2)
       
       # Add PC scores as subtitle
+      score_type_label <- if (!is.null(shape_data$score_type) && shape_data$score_type == "absolute") "(absolute)" else "(SD)"
       pc_text <- paste(names(shape_data$pc_scores), "=", round(shape_data$pc_scores, 2), collapse = ", ")
-      mtext(pc_text, side = 3, line = 0.5, cex = 0.8, col = "gray30")
+      mtext(paste(pc_text, score_type_label), side = 3, line = 0.5, cex = 0.8, col = "gray30")
       
     }, height = function() {
       size <- input$plot_size
@@ -610,11 +503,13 @@ shape_reconstruction_server <- function(id) {
       req(shape_data)
       
       coords <- shape_data$coords
+      score_type_label <- if (!is.null(shape_data$score_type) && shape_data$score_type == "absolute") "Absolute PC values" else "SD units"
       paste0(
         "Reconstruction successful\n",
         "Number of outline points: ", nrow(coords), "\n",
         "X range: [", round(min(coords[,1]), 2), ", ", round(max(coords[,1]), 2), "]\n",
         "Y range: [", round(min(coords[,2]), 2), ", ", round(max(coords[,2]), 2), "]\n",
+        "\nInput type: ", score_type_label, "\n",
         "\nPC Scores used:\n",
         paste(names(shape_data$pc_scores), "=", round(shape_data$pc_scores, 3), collapse = "\n")
       )
@@ -775,11 +670,5 @@ shape_reconstruction_server <- function(id) {
         dev.off()
       }
     )
-    
-    invisible(list(
-      model = loaded_model,
-      shape = reconstructed_shape,
-      batch = batch_shapes
-    ))
   })
 }
