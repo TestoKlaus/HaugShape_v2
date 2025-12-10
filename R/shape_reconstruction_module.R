@@ -124,7 +124,7 @@ shape_reconstruction_server <- function(id) {
           shinyFiles::shinyFilesButton(
             ns("model_file_btn"), 
             label = "Choose reconstruction model file", 
-            title = "Select RDS file",
+            title = "Select CSV file (*_pca_rotation.csv)",
             multiple = FALSE
           ),
           br(), br(),
@@ -132,7 +132,7 @@ shape_reconstruction_server <- function(id) {
           textOutput(ns("model_file_selected"), inline = TRUE)
         )
       } else {
-        textInput(ns("model_file_fallback"), "Model file path (.rds)", value = "")
+        textInput(ns("model_file_fallback"), "Model file path (.csv)", value = "")
       }
     })
     
@@ -157,7 +157,7 @@ shape_reconstruction_server <- function(id) {
         id = "model_file_btn", 
         roots = roots, 
         session = session,
-        filetypes = c("rds", "RDS")
+        filetypes = c("csv", "CSV")
       )
     })
     
