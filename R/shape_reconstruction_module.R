@@ -424,7 +424,8 @@ shape_reconstruction_server <- function(id) {
       is_normalized <- isTRUE(model$parameters$norm)
       
       # Split coefficients into A, B, C, D components
-      coef_list <- coeff_split(reconstructed_coefs, nb.h = n_harmonics)
+      # coeff_split calculates nb.h automatically from length
+      coef_list <- coeff_split(reconstructed_coefs)
       
       # If coefficients were normalized during analysis, denormalize them
       if (is_normalized) {
