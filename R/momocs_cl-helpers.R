@@ -1,3 +1,10 @@
+# Momocs class helpers
+#
+# This file contains code adapted from the Momocs package
+# (https://github.com/MomX/Momocs)
+# Original authors: Vincent Bonhomme, Sandrine Picq, Cedric Gaucherel, Julien Claude
+# Momocs is licensed under GPL-2 | GPL-3
+# Reference: Bonhomme et al. (2014) J. Stat. Softw. 56(13). doi:10.18637/jss.v056.i13
 
 # class appenders ------------------------------------------
 .prepend_class <- function(x, class_to_add){

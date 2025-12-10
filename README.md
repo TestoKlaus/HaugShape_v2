@@ -82,12 +82,34 @@ For detailed instructions, see `MORPH_SHAPES_GUIDE.md` or the quick reference in
 ## Requirements
 
 - R >= 4.0.0
-- Required packages: Momocs, ggplot2, dplyr, openxlsx, shiny, shinydashboard
-- Optional packages for morphing: magick, imager, shinyFiles
+- Required packages: ggplot2, dplyr, tidyr, scales, readxl, openxlsx, magick, shiny, shinydashboard, DT, plotly, and others (see DESCRIPTION)
+
+## Citation
+
+If you use HaugShapeV2 in publications, please cite:
+
+> Hassenbach, C. (2025). HaugShapeV2: Morphometric Shape Analysis and Visualization Tools. R package version 0.1.0. https://github.com/TestoKlaus/HaugShape_v2
+
+**Important:** HaugShapeV2 incorporates code adapted from the Momocs package. Please also cite:
+
+> Bonhomme, V., Picq, S., Gaucherel, C., & Claude, J. (2014). Momocs: Outline Analysis Using R. Journal of Statistical Software, 56(13), 1-24. https://doi.org/10.18637/jss.v056.i13
+
+For Elliptical Fourier Analysis methods, also cite:
+
+> Claude, J. (2008). Morphometrics with R. Springer-Verlag, New York.
+
+You can get citation information in R with:
+```r
+citation("HaugShapeV2")
+```
+
+For detailed attribution information, see `ATTRIBUTION.md`.
 
 ## License
 
 MIT License
+
+This package incorporates code adapted from Momocs (https://github.com/MomX/Momocs), which is licensed under GPL-2 | GPL-3.
 
 ## Contact
 
