@@ -19,7 +19,7 @@ shape_reconstruction_ui <- function(id) {
           
           # Model file chooser
           uiOutput(ns("model_file_ui")),
-          helpText("Select a reconstruction model RDS file (e.g., *_reconstruction_model.rds)"),
+          helpText("Select a reconstruction model folder containing CSV files, or any CSV file from the folder (e.g., *_pca_rotation.csv)"),
           
           actionButton(ns("load_model"), "Load Model", class = "btn-primary"),
           
@@ -213,7 +213,7 @@ shape_reconstruction_server <- function(id) {
       
       withProgress(message = "Loading reconstruction model...", value = 0.5, {
         model <- tryCatch({
-          load_reconstruction_model(path, validate = TRUE, verbose = FALSE)
+          load_reconstruction_csv(path, validate = TRUE, verbose = FALSE)
         }, error = function(e) {
           showNotification(paste("Failed to load model:", conditionMessage(e)), type = "error", duration = 8)
           NULL
@@ -235,13 +235,17 @@ shape_reconstruction_server <- function(id) {
         tags$h4("Model Information", style = "color: #3c8dbc;"),
         tags$table(
           class = "table table-condensed",
-          tags$tr(tags$td(tags$strong("Specimens:")), tags$td(model$parameters$n_specimens)),
-          tags$tr(tags$td(tags$strong("Principal Components:")), tags$td(model$parameters$n_components)),
-          tags$tr(tags$td(tags$strong("Harmonics:")), tags$td(model$parameters$harmonics)),
-          tags$tr(tags$td(tags$strong("Normalization:")), tags$td(as.character(model$parameters$norm))),
-          tags$tr(tags$td(tags$strong("Start Point:")), tags$td(model$parameters$start_point)),
-          tags$tr(tags$td(tags$strong("Created:")), tags$td(format(model$metadata$created_date))),
-          tags$tr(tags$td(tags$strong("Format Version:")), tags$td(model$metadata$format_version))
+          tags$tr(tags$td(tags$strong("Coefficients:")), tags$td(length(model$center))),
+          tags$tr(tags$td(tags$strong("Principal Components:")), tags$td(ncol(model$rotation))),
+          if (!is.null(model$parameters$n_harmonics)) {
+            tags$tr(tags$td(tags$strong("Harmonics:")), tags$td(model$parameters$n_harmonics))
+          },
+          if (!is.null(model$parameters$norm)) {
+            tags$tr(tags$td(tags$strong("Normalization:")), tags$td(as.character(model$parameters$norm)))
+          },
+          if (!is.null(model$parameters$start_point)) {
+            tags$tr(tags$td(tags$strong("Start Point:")), tags$td(model$parameters$start_point))
+          }
         ),
         tags$hr(),
         tags$h5("Variance Explained:"),
