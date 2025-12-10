@@ -55,7 +55,8 @@ shape_reconstruction_ui <- function(id) {
           
           actionButton(ns("reconstruct"), "Reconstruct Shape", class = "btn-success"),
           downloadButton(ns("download_coords"), "Download Coordinates (CSV)"),
-          downloadButton(ns("download_plot"), "Download Plot (PNG)")
+          downloadButton(ns("download_plot"), "Download Plot (PNG)"),
+          downloadButton(ns("download_jpg"), "Download Shape (JPG)")
         ),
         
         box(
@@ -480,11 +481,12 @@ shape_reconstruction_server <- function(id) {
       
       coords <- shape_data$coords
       
-      # Create plot
-      plot(coords, type = "l", lwd = 2, col = "steelblue", 
+      # Create plot with white background and black shape
+      par(bg = "white")
+      plot(coords, type = "l", lwd = 2, col = "black", 
            asp = 1, xlab = "", ylab = "", main = "Reconstructed Shape",
            axes = FALSE, frame.plot = TRUE)
-      polygon(coords, col = rgb(0.25, 0.55, 0.75, 0.3), border = "steelblue", lwd = 2)
+      polygon(coords, col = "black", border = "black", lwd = 2)
       
       # Add PC scores as subtitle
       score_type_label <- if (!is.null(shape_data$score_type) && shape_data$score_type == "absolute") "(absolute)" else "(SD)"
@@ -547,13 +549,35 @@ shape_reconstruction_server <- function(id) {
         
         coords <- shape_data$coords
         
-        png(file, width = 800, height = 800, res = 150)
-        plot(coords, type = "l", lwd = 2, col = "steelblue", 
+        png(file, width = 800, height = 800, res = 150, bg = "white")
+        plot(coords, type = "l", lwd = 2, col = "black", 
              asp = 1, xlab = "", ylab = "", main = "Reconstructed Shape",
              axes = FALSE, frame.plot = TRUE)
-        polygon(coords, col = rgb(0.25, 0.55, 0.75, 0.3), border = "steelblue", lwd = 2)
+        polygon(coords, col = "black", border = "black", lwd = 2)
+        score_type_label <- if (!is.null(shape_data$score_type) && shape_data$score_type == "absolute") "(absolute)" else "(SD)"
         pc_text <- paste(names(shape_data$pc_scores), "=", round(shape_data$pc_scores, 2), collapse = ", ")
-        mtext(pc_text, side = 3, line = 0.5, cex = 0.8, col = "gray30")
+        mtext(paste(pc_text, score_type_label), side = 3, line = 0.5, cex = 0.8, col = "gray30")
+        dev.off()
+      }
+    )
+    
+    # Download shape as JPG (clean, no labels)
+    output$download_jpg <- downloadHandler(
+      filename = function() {
+        paste0("reconstructed_shape_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".jpg")
+      },
+      content = function(file) {
+        shape_data <- reconstructed_shape()
+        req(shape_data)
+        
+        coords <- shape_data$coords
+        
+        # Create clean JPG with just the black shape on white background
+        jpeg(file, width = 800, height = 800, quality = 100, bg = "white")
+        par(mar = c(0, 0, 0, 0), bg = "white")
+        plot(coords, type = "n", asp = 1, xlab = "", ylab = "",
+             axes = FALSE, frame.plot = FALSE)
+        polygon(coords, col = "black", border = "black", lwd = 1)
         dev.off()
       }
     )
