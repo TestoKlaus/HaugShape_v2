@@ -846,5 +846,5 @@ shape_reconstruction_server <- function(id) {
         dev.off()
       }
     )
-  }
+  })
 }
