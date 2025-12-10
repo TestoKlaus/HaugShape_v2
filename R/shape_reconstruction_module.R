@@ -231,22 +231,33 @@ shape_reconstruction_server <- function(id) {
       model <- loaded_model()
       req(model)
       
+      # Build table rows conditionally
+      table_rows <- list(
+        tags$tr(tags$td(tags$strong("Coefficients:")), tags$td(length(model$center))),
+        tags$tr(tags$td(tags$strong("Principal Components:")), tags$td(ncol(model$rotation)))
+      )
+      
+      if (!is.null(model$parameters$n_harmonics)) {
+        table_rows <- c(table_rows, list(
+          tags$tr(tags$td(tags$strong("Harmonics:")), tags$td(model$parameters$n_harmonics))
+        ))
+      }
+      
+      if (!is.null(model$parameters$norm)) {
+        table_rows <- c(table_rows, list(
+          tags$tr(tags$td(tags$strong("Normalization:")), tags$td(as.character(model$parameters$norm)))
+        ))
+      }
+      
+      if (!is.null(model$parameters$start_point)) {
+        table_rows <- c(table_rows, list(
+          tags$tr(tags$td(tags$strong("Start Point:")), tags$td(model$parameters$start_point))
+        ))
+      }
+      
       tagList(
         tags$h4("Model Information", style = "color: #3c8dbc;"),
-        tags$table(
-          class = "table table-condensed",
-          tags$tr(tags$td(tags$strong("Coefficients:")), tags$td(length(model$center))),
-          tags$tr(tags$td(tags$strong("Principal Components:")), tags$td(ncol(model$rotation))),
-          if (!is.null(model$parameters$n_harmonics)) {
-            tags$tr(tags$td(tags$strong("Harmonics:")), tags$td(model$parameters$n_harmonics))
-          },
-          if (!is.null(model$parameters$norm)) {
-            tags$tr(tags$td(tags$strong("Normalization:")), tags$td(as.character(model$parameters$norm)))
-          },
-          if (!is.null(model$parameters$start_point)) {
-            tags$tr(tags$td(tags$strong("Start Point:")), tags$td(model$parameters$start_point))
-          }
-        ),
+        do.call(tags$table, c(list(class = "table table-condensed"), table_rows)),
         tags$hr(),
         tags$h5("Variance Explained:"),
         tags$pre(style = "max-height: 150px; overflow-y: auto; font-size: 11px;", {
