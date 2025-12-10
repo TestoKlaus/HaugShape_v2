@@ -346,6 +346,40 @@ shape_reconstruction_server <- function(id) {
       })
     })
     
+    # Helper function to denormalize efourier coefficients
+    # When norm=TRUE, efourier produces A,B,C,D normalized coefficients
+    # efourier_i expects an,bn,cn,dn raw coefficients
+    # This function reverses the normalization
+    .efourier_denorm <- function(A, B, C, D, size, theta, psi) {
+      nb.h <- length(A)
+      
+      # Inverse of the normalization transformations
+      scale <- 1/size  # size in efourier_norm is 1/scale
+      
+      # Inverse rotation matrix
+      inv_rotation <- matrix(c(cos(psi), sin(psi), -sin(psi), cos(psi)), 2, 2)
+      
+      an <- bn <- cn <- dn <- numeric(nb.h)
+      
+      for (i in 1:nb.h) {
+        # Inverse phase shift for this harmonic
+        inv_phase <- matrix(c(cos(i * theta), -sin(i * theta),
+                             sin(i * theta), cos(i * theta)), 2, 2)
+        
+        # Apply inverse transformations: raw = inv_rotation * normalized * inv_phase / size
+        mat <- inv_rotation %*%
+               matrix(c(A[i], C[i], B[i], D[i]), 2, 2) %*%
+               inv_phase / scale
+        
+        an[i] <- mat[1, 1]
+        cn[i] <- mat[2, 1]
+        bn[i] <- mat[1, 2]
+        dn[i] <- mat[2, 2]
+      }
+      
+      return(list(an = an, bn = bn, cn = cn, dn = dn))
+    }
+    
     # Helper function to reconstruct a single shape
     .reconstruct_single_shape <- function(model, pc_scores) {
       # Ensure pc_scores is numeric vector
@@ -439,147 +473,73 @@ shape_reconstruction_server <- function(id) {
         n_harmonics <- ncol(reconstructed_coe$coe) / 4
         message("Number of harmonics: ", n_harmonics)
         
-        # Use Momocs efourier_i - it will handle all denormalization automatically
-        message("Attempting Momocs efourier_i with complete object...")
-        outline <- tryCatch({
-          result <- efourier_i(reconstructed_coe, nb.h = as.integer(n_harmonics), nb.pts = 120)
-          message("Momocs efourier_i succeeded!")
-          result
+        # Check if coefficients are normalized
+        is_normalized <- !is.null(reconstructed_coe$norm) && reconstructed_coe$norm == TRUE
+        message("Coefficients normalized: ", is_normalized)
+        
+        # Split coefficients into A, B, C, D
+        coef_list <- coeff_split(reconstructed_coefs, nb.h = n_harmonics, cph = 4)
+        
+        if (is_normalized) {
+          message("Denormalizing coefficients before reconstruction...")
+          
+          # Get normalization parameters from the first specimen in the original EFA object
+          # These are typically stored when efourier is run with norm=TRUE
+          # We need to estimate them from the data
+          # For normalized coefficients, the first harmonic defines the normalization
+          A1 <- coef_list$an[1]
+          B1 <- coef_list$bn[1]
+          C1 <- coef_list$cn[1]
+          D1 <- coef_list$dn[1]
+          
+          # Calculate normalization parameters (from efourier_norm logic)
+          theta <- 0.5 * atan(2 * (A1 * B1 + C1 * D1) / (A1^2 + C1^2 - B1^2 - D1^2)) %% pi
+          phaseshift <- matrix(c(cos(theta), sin(theta), -sin(theta), cos(theta)), 2, 2)
+          M2 <- matrix(c(A1, C1, B1, D1), 2, 2) %*% phaseshift
+          v <- apply(M2^2, 2, sum)
+          if (v[1] < v[2]) {
+            theta <- theta + pi/2
+          }
+          theta <- (theta + pi/2) %% pi - pi/2
+          Aa <- A1 * cos(theta) + B1 * sin(theta)
+          Cc <- C1 * cos(theta) + D1 * sin(theta)
+          scale <- sqrt(Aa^2 + Cc^2)
+          psi <- atan(Cc/Aa) %% pi
+          if (Aa < 0) {
+            psi <- psi + pi
+          }
+          size <- 1/scale
+          
+          message("  Normalization params: size=", round(size, 4), ", theta=", round(theta, 4), ", psi=", round(psi, 4))
+          
+          # Denormalize coefficients
+          denorm_coefs <- .efourier_denorm(coef_list$an, coef_list$bn, coef_list$cn, coef_list$dn,
+                                          size, theta, psi)
+          coef_list <- denorm_coefs
+          message("  Coefficients denormalized successfully")
+        }
+        
+        # Now use efourier_i with the (possibly denormalized) coefficients
+        message("Reconstructing shape with efourier_i...")
+        coords <- tryCatch({
+          efourier_i(coef_list, nb.h = n_harmonics, nb.pts = 120)
         }, error = function(e) {
-          message("Momocs efourier_i failed: ", conditionMessage(e))
+          message("efourier_i failed: ", conditionMessage(e))
           NULL
         })
-        
-        # Extract coordinates
-        if (!is.null(outline)) {
-          if (inherits(outline, "Out") && !is.null(outline$coo)) {
-            coords <- outline$coo[[1]]
-            message("Extracted coords from Out object: ", nrow(coords), " x ", ncol(coords))
-          } else if (is.matrix(outline)) {
-            coords <- outline
-            message("Using outline as matrix directly: ", nrow(coords), " x ", ncol(coords))
-          } else if (is.list(outline) && !is.null(outline[[1]])) {
-            coords <- outline[[1]]
-            message("Extracted coords from list: ", nrow(coords), " x ", ncol(coords))
-          } else {
-            message("Outline format not recognized")
-            outline <- NULL
-          }
-        }
-        
-      } else {
-        # Fallback: build OutCoe manually (old approach)
-        message("EFA object not in model, using manual OutCoe construction")
-        outline <- NULL  # Will trigger manual reconstruction below
+      
+      # Final check and return
+      if (is.null(coords)) {
+        message("ERROR: Shape reconstruction failed")
+        return(NULL)
       }
       
-      # Fallback: manual reconstruction if Momocs failed
-      if (is.null(outline)) {
-        message("Using manual inverse Fourier transformation")
-        nb_pts <- 120
-        theta <- seq(0, 2 * pi, length.out = nb_pts + 1)[-(nb_pts + 1)]
-        x <- numeric(nb_pts)
-        y <- numeric(nb_pts)
-        
-        # Standard inverse Fourier: sum harmonics
-        for (h in 1:n_harmonics) {
-          idx <- (h - 1) * 4 + 1:4
-          An <- reconstructed_coefs[idx[1]]
-          Bn <- reconstructed_coefs[idx[2]]
-          Cn <- reconstructed_coefs[idx[3]]
-          Dn <- reconstructed_coefs[idx[4]]
-          
-          x <- x + An * cos(h * theta) + Bn * sin(h * theta)
-          y <- y + Cn * cos(h * theta) + Dn * sin(h * theta)
-        }
-        
-        # Apply denormalization if parameters are available
-        if (!is.null(reconstructed_coe$norm) && reconstructed_coe$norm == TRUE) {
-          message("Applying denormalization transformations...")
-          
-          # Try to use shape_metadata (our manual capture) first
-          if (!is.null(model$shape_metadata) && length(model$shape_metadata) > 0) {
-            # Calculate mean size and centroid from all shapes
-            sizes <- sapply(model$shape_metadata, function(m) m$size)
-            centroids <- t(sapply(model$shape_metadata, function(m) m$centroid))
-            
-            mean_size <- mean(sizes, na.rm = TRUE)
-            mean_centroid <- colMeans(centroids, na.rm = TRUE)
-            
-            message("  Using shape metadata for denormalization")
-            message("  Mean size: ", round(mean_size, 3))
-            message("  Mean centroid: [", paste(round(mean_centroid, 3), collapse = ", "), "]")
-            
-            # Scale by mean size
-            if (mean_size > 0) {
-              x <- x * mean_size
-              y <- y * mean_size
-            }
-            
-            # Translate by mean centroid
-            x <- x + mean_centroid[1]
-            y <- y + mean_centroid[2]
-            
-          } else {
-            # Fallback to r1/r2/baseline if available
-            r1 <- reconstructed_coe$r1
-            r2 <- reconstructed_coe$r2
-            baseline1 <- reconstructed_coe$baseline1
-            baseline2 <- reconstructed_coe$baseline2
-            
-            if (!is.null(r1) && !is.null(r2) && !is.null(baseline1) && !is.null(baseline2)) {
-              # Scale by size (r2 is the size parameter)
-              if (r2 > 0) {
-                x <- x * r2
-                y <- y * r2
-                message("  Scaled by r2 = ", round(r2, 3))
-              }
-              
-              # Translate by baseline (centroid position)
-              if (length(baseline1) >= 2) {
-                x <- x + baseline1[1]
-                y <- y + baseline1[2]
-                message("  Translated by baseline1 = [", paste(round(baseline1, 3), collapse = ", "), "]")
-              }
-            } else {
-              message("  Warning: No denormalization parameters available")
-            }
-          }
-        }
-        
-        coords <- cbind(x, y)
-        message("Manual reconstruction complete: ", nrow(coords), " points")
-        message("X range: [", round(min(x), 3), ", ", round(max(x), 3), "]")
-        message("Y range: [", round(min(y), 3), ", ", round(max(y), 3), "]")
-        
-        # Check if shape looks degenerate
-        x_range <- max(x) - min(x)
-        y_range <- max(y) - min(y)
-        aspect_ratio <- if (y_range > 0) x_range / y_range else 0
-        
-        message("Aspect ratio X/Y: ", round(aspect_ratio, 3))
-        
-        if (x_range < 0.01 && y_range < 0.01) {
-          warning("Reconstructed shape is very small. This may indicate an issue with the coefficients.")
-        }
-        if (aspect_ratio < 0.1 || aspect_ratio > 10) {
-          warning("Reconstructed shape has extreme aspect ratio: ", round(aspect_ratio, 3), 
-                  ". This may indicate missing or incorrect normalization parameters.")
-        }
-      }
-      
-      message("=== Reconstruction Complete ===\n")
-      
-      # Ensure coords is a matrix with 2 columns
-      if (!is.matrix(coords) || ncol(coords) != 2) {
-        stop("Reconstructed coordinates are not a valid 2-column matrix")
-      }
-      
+      message("Shape reconstruction complete!")
       return(coords)
     }
     
-    # Helper operator
-    `%||%` <- function(a, b) if (is.null(a)) b else a
+    # Batch reconstruction function
+    .reconstruct_batch <- function(model, pc_axis, min_val, max_val, n_steps, hold_others_zero) {
     
     # Plot reconstructed shape
     output$shape_plot <- renderPlot({
