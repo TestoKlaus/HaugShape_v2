@@ -42,16 +42,16 @@
 #' \describe{
 #'   \item{export}{Logical, whether to export the plot (default: FALSE)}
 #'   \item{filename}{Base filename without extension}
-#'   \item{path}{Optional output directory}
-#'   \item{format}{Output format, e.g. "tiff" or "jpg"}
-#'   \item{dpi}{Resolution in dots per inch (default: 300)}
-#'   \item{width}{Optional width in inches}
-#'   \item{height}{Optional height in inches}
+#'   \item{path}{Optional output directory (if NULL, uses working directory)}
+#'   \item{format}{Output format: "rds", "svg", "tiff", or "png"}
+#'   \item{width}{Width in inches (optional for SVG, required for TIFF/PNG, ignored for RDS)}
+#'   \item{height}{Height in inches (optional for SVG, required for TIFF/PNG, ignored for RDS)}
+#'   \item{dpi}{Resolution in dots per inch for raster formats only (default: 300)}
 #' }
-#' Notes on export behavior:
-#' - Shapes and geometry will not be distorted: by default a fixed 1:1 aspect ratio is applied.
-#' - If only one of width/height is provided, the other is computed to preserve the aspect ratio.
-#' - If both are provided, the plot maintains its aspect ratio inside the image, adding padding as needed.
+#' Notes on export formats:
+#' - RDS: Saves the ggplot object for later editing in R
+#' - SVG: Vector format with base dimensions (scalable without quality loss)
+#' - TIFF/PNG: Raster formats requiring width, height, and DPI specifications
 #'
 #' @return A ggplot2 object representing the scatter plot.
 #'
@@ -1098,65 +1098,86 @@ shape_plot <- function(data,
 
 # Export Functions ----
 
-#' Export plot to file
+#' Export plot to file (RDS, SVG, TIFF, or PNG)
 #' @noRd
 .export_plot <- function(plot, export_options, verbose) {
+  
+  # Validate format
+  fmt <- tolower(export_options$format)
+  if (!fmt %in% c("rds", "svg", "tiff", "png")) {
+    stop("Unsupported export format: '", export_options$format, "'. ",
+         "Supported formats: rds, svg, tiff, png", call. = FALSE)
+  }
   
   # Setup file path
   if (!is.null(export_options$path)) {
     if (!dir.exists(export_options$path)) {
       stop("Export path does not exist: ", export_options$path, call. = FALSE)
     }
-    file_path <- file.path(export_options$path, paste0(export_options$filename, ".", export_options$format))
+    file_path <- file.path(export_options$path, 
+                          paste0(export_options$filename, ".", fmt))
   } else {
-    file_path <- paste0(export_options$filename, ".", export_options$format)
+    file_path <- paste0(export_options$filename, ".", fmt)
   }
   
   if (verbose) message("Exporting plot to: ", file_path)
   
-  # Determine aspect ratio from plot build if available, fallback to 1 (square)
-  aspect_ratio <- try({
-    cf <- plot$coordinates
-    r <- tryCatch(cf$ratio, error = function(...) NULL)
-    if (is.null(r)) 1 else as.numeric(r)
-  }, silent = TRUE)
-  if (!is.numeric(aspect_ratio) || !is.finite(aspect_ratio) || aspect_ratio <= 0) aspect_ratio <- 1
-
-  # Compute width/height if one is missing to preserve aspect
-  width <- export_options$width
-  height <- export_options$height
-  if (is.null(width) && is.null(height)) {
-    # Sensible defaults maintaining aspect
-    height <- 6
-    width <- height / aspect_ratio
-  } else if (is.null(width) && !is.null(height)) {
-    width <- height / aspect_ratio
-  } else if (!is.null(width) && is.null(height)) {
-    height <- width * aspect_ratio
-  }
-
-  # Choose device based on format to avoid ambiguity
-  fmt <- tolower(export_options$format)
-  device <- switch(fmt,
-    "tif" = grDevices::tiff,
-    "tiff" = grDevices::tiff,
-    "jpg" = grDevices::jpeg,
-    "jpeg" = grDevices::jpeg,
-    "png" = grDevices::png,
-    NULL
-  )
-
   tryCatch({
-    ggplot2::ggsave(
-      filename = file_path,
-      plot = plot,
-      width = width,
-      height = height,
-      dpi = export_options$dpi,
-      device = device
-    )
+    if (fmt == "rds") {
+      # Save ggplot object as RDS for later editing in R
+      saveRDS(plot, file = file_path)
+      if (verbose) message("ggplot object saved as RDS")
+      
+    } else if (fmt == "svg") {
+      # Export as SVG (vector format with base dimensions)
+      width <- export_options$width
+      height <- export_options$height
+      
+      # Use defaults if not provided
+      if (is.null(width)) width <- 8
+      if (is.null(height)) height <- 8
+      
+      ggplot2::ggsave(
+        filename = file_path,
+        plot = plot,
+        width = width,
+        height = height,
+        device = "svg"
+      )
+      if (verbose) {
+        message(sprintf("Plot exported as SVG (%g x %g inches base size)", 
+                       width, height))
+      }
+      
+    } else if (fmt %in% c("tiff", "png")) {
+      # Export as raster with specified dimensions
+      width <- export_options$width
+      height <- export_options$height
+      dpi <- if (!is.null(export_options$dpi)) export_options$dpi else 300
+      
+      # Validate dimensions are provided for raster formats
+      if (is.null(width) || is.null(height)) {
+        stop("Width and height must be specified for ", 
+             toupper(fmt), " export", call. = FALSE)
+      }
+      
+      # Export using ggsave
+      ggplot2::ggsave(
+        filename = file_path,
+        plot = plot,
+        width = width,
+        height = height,
+        dpi = dpi,
+        device = fmt
+      )
+      if (verbose) {
+        message(sprintf("Plot exported as %s (%g x %g inches, %d DPI)", 
+                       toupper(fmt), width, height, dpi))
+      }
+    }
     
-    if (verbose) message("Plot exported successfully")
+    if (verbose) message("Export completed successfully")
+    
   }, error = function(e) {
     stop("Failed to export plot: ", e$message, call. = FALSE)
   })

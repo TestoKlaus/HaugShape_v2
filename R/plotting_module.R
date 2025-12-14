@@ -129,21 +129,28 @@ plotting_ui <- function(id) {
           width = 12,
           collapsible = TRUE,
           collapsed = TRUE,
-          checkboxInput(ns("export"), "Export using shape_plot", value = FALSE),
+          checkboxInput(ns("export"), "Export plot", value = FALSE),
           textInput(ns("export_filename"), "Filename (without extension)", value = "shape_plot_output"),
           uiOutput(ns("export_dir_ui")),
           textOutput(ns("export_dir_txt")),
-          selectInput(ns("export_format"), "Format", choices = c("tiff","jpg"), selected = "tiff"),
-          checkboxInput(ns("export_custom_size"), "Set custom size (inches)", value = FALSE),
+          selectInput(ns("export_format"), "Format", 
+                     choices = c("RDS (R object)" = "rds",
+                               "SVG (vector)" = "svg",
+                               "TIFF (raster)" = "tiff",
+                               "PNG (raster)" = "png"), 
+                     selected = "svg"),
           conditionalPanel(
-            condition = sprintf("input['%s']", ns("export_custom_size")),
+            condition = sprintf("input['%s'] != 'rds'", ns("export_format")),
             numericInput(ns("export_width"), "Width (inches)", value = 8, min = 1, step = 0.5),
             numericInput(ns("export_height"), "Height (inches)", value = 8, min = 1, step = 0.5)
           ),
-          numericInput(ns("export_dpi"), "DPI", value = 300, min = 72, step = 10),
-          tags$hr(),
-          helpText("Prefer to edit the plot later in RStudio? Download the ggplot object:"),
-          downloadButton(ns("download_plot_rds"), "Download ggplot (.rds)")
+          conditionalPanel(
+            condition = sprintf("input['%s'] == 'tiff' || input['%s'] == 'png'", ns("export_format"), ns("export_format")),
+            numericInput(ns("export_dpi"), "DPI", value = 300, min = 72, step = 10)
+          ),
+          helpText("RDS: Save ggplot object for later editing in R"),
+          helpText("SVG: Vector format with base dimensions (scalable)"),
+          helpText("TIFF/PNG: Raster formats with specified dimensions and DPI")
         ),
         div(style = "margin: 10px 0;",
             actionButton(ns("render"), "Render plot", class = "btn-success btn-lg")
@@ -654,9 +661,9 @@ plotting_server <- function(id, data_reactive) {
           if (!is.null(p) && nzchar(p)) p else NULL
         },
         format = input$export_format,
-        width = if (isTRUE(input$export_custom_size)) input$export_width else NULL,
-        height = if (isTRUE(input$export_custom_size)) input$export_height else NULL,
-        dpi = input$export_dpi
+        width = if (!is.null(input$export_width)) input$export_width else NULL,
+        height = if (!is.null(input$export_height)) input$export_height else NULL,
+        dpi = if (!is.null(input$export_dpi)) input$export_dpi else 300
       )
 
       # Call shape_plot
@@ -777,20 +784,7 @@ plotting_server <- function(id, data_reactive) {
       do.call(tagList, rows)
     })
 
-      # Download handler: ggplot object as .rds for further editing in RStudio
-      output$download_plot_rds <- downloadHandler(
-        filename = function() {
-          stem <- input$export_filename
-          if (is.null(stem) || !nzchar(stem)) stem <- "shape_plot_output"
-          paste0(stem, ".rds")
-        },
-        content = function(file) {
-          p <- plot_obj()
-          validate(need(!is.null(p), "No plot has been rendered yet. Click 'Render plot' first."))
-          saveRDS(p, file)
-        }
-      )
-
+    # Removed: download_plot_rds handler (now integrated into main export functionality)
     # Removed: hull specimens modal button and observer (now shown inline in the legend)
 
     invisible(list(plot = plot_obj))
