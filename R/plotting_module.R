@@ -130,26 +130,11 @@ plotting_ui <- function(id) {
           collapsible = TRUE,
           collapsed = TRUE,
           textInput(ns("export_filename"), "Filename (without extension)", value = "shape_plot_output"),
-          selectInput(ns("export_format"), "Format", 
-                     choices = c("RDS (R object)" = "rds",
-                               "SVG (vector)" = "svg",
-                               "TIFF (raster)" = "tiff",
-                               "PNG (raster)" = "png"), 
-                     selected = "svg"),
-          conditionalPanel(
-            condition = sprintf("input['%s'] != 'rds'", ns("export_format")),
-            numericInput(ns("export_width"), "Width (inches)", value = 8, min = 1, step = 0.5),
-            numericInput(ns("export_height"), "Height (inches)", value = 8, min = 1, step = 0.5)
-          ),
-          conditionalPanel(
-            condition = sprintf("input['%s'] == 'tiff' || input['%s'] == 'png'", ns("export_format"), ns("export_format")),
-            numericInput(ns("export_dpi"), "DPI", value = 300, min = 72, step = 10)
-          ),
-          helpText("RDS: Save ggplot object for later editing in R"),
-          helpText("SVG: Vector format with base dimensions (scalable)"),
-          helpText("TIFF/PNG: Raster formats with specified dimensions and DPI"),
+          helpText("Download the plot as an RDS file (R ggplot object)."),
+          helpText("Then open it in RStudio and use File > Export to save as SVG, PNG, TIFF, or PDF."),
+          helpText("This preserves individual plot elements for editing in SVG!"),
           tags$hr(),
-          downloadButton(ns("download_plot"), "Download Plot", class = "btn-primary")
+          downloadButton(ns("download_plot"), "Download ggplot (.rds)", class = "btn-primary")
         ),
         div(style = "margin: 10px 0;",
             actionButton(ns("render"), "Render plot", class = "btn-success btn-lg")
@@ -722,65 +707,17 @@ plotting_server <- function(id, data_reactive) {
       do.call(tagList, rows)
     })
 
-    # Download handler for plot export
+    # Download handler for plot export as RDS
     output$download_plot <- downloadHandler(
       filename = function() {
         stem <- input$export_filename
         if (is.null(stem) || !nzchar(stem)) stem <- "shape_plot_output"
-        fmt <- input$export_format
-        paste0(stem, ".", fmt)
+        paste0(stem, ".rds")
       },
       content = function(file) {
         p <- plot_obj()
         validate(need(!is.null(p), "No plot has been rendered yet. Click 'Render plot' first."))
-        
-        fmt <- tolower(input$export_format)
-        
-        tryCatch({
-          if (fmt == "rds") {
-            # Save ggplot object as RDS
-            saveRDS(p, file)
-            
-          } else if (fmt == "svg") {
-            # Export as SVG with dimensions
-            width <- if (!is.null(input$export_width)) input$export_width else 8
-            height <- if (!is.null(input$export_height)) input$export_height else 8
-            
-            ggplot2::ggsave(
-              filename = file,
-              plot = p,
-              width = width,
-              height = height,
-              device = "svg"
-            )
-            
-          } else if (fmt %in% c("tiff", "png")) {
-            # Export as raster with dimensions and DPI
-            width <- input$export_width
-            height <- input$export_height
-            dpi <- if (!is.null(input$export_dpi)) input$export_dpi else 300
-            
-            if (is.null(width) || is.null(height)) {
-              stop("Width and height must be specified for ", toupper(fmt), " export")
-            }
-            
-            ggplot2::ggsave(
-              filename = file,
-              plot = p,
-              width = width,
-              height = height,
-              dpi = dpi,
-              device = fmt
-            )
-          }
-        }, error = function(e) {
-          showNotification(
-            paste("Export failed:", e$message),
-            type = "error",
-            duration = 10
-          )
-          stop(e)
-        })
+        saveRDS(p, file)
       }
     )
 
