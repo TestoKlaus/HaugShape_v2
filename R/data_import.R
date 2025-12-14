@@ -87,24 +87,13 @@ data_import_ui <- function(id) {
           verbatimTextOutput(ns("mapping_summary"))
         ),
         box(
-          title = "Data Preview",
-          status = "info",
+          title = "Group Builder",
+          status = "primary",
           solidHeader = TRUE,
           width = 12,
           collapsible = TRUE,
-          fluidRow(
-            column(12,
-              checkboxInput(ns("enable_edit"), "Enable editing", value = FALSE)
-            )
-          ),
-          fluidRow(
-            column(4, textInput(ns("new_col_name"), "New column name", value = "")),
-            column(3, selectInput(ns("new_col_type"), "New column type", choices = c("character","numeric","logical"), selected = "character")),
-            column(3, uiOutput(ns("new_col_default_ui"))),
-            column(2, div(style = "margin-top: 24px;", actionButton(ns("add_col_btn"), "Add column", class = "btn-primary")))
-          ),
-          hr(),
-          tags$h4("Group builder"),
+          collapsed = TRUE,
+          helpText("Create or modify grouping columns by defining rules based on ID ranges or lists."),
           fluidRow(
             column(4, textInput(ns("group_target_col"), "Target column (new or existing)", value = "group")),
             column(4, selectInput(ns("group_id_col"), "ID column for grouping", choices = NULL)),
@@ -120,6 +109,24 @@ data_import_ui <- function(id) {
           fluidRow(
             column(3, div(style = "margin-top: 8px;", actionButton(ns("group_apply"), "Apply rules", class = "btn-success"))),
             column(9, div(style = "margin-top: 14px;", textOutput(ns("group_status"))))
+          )
+        ),
+        box(
+          title = "Data Preview",
+          status = "info",
+          solidHeader = TRUE,
+          width = 12,
+          collapsible = TRUE,
+          fluidRow(
+            column(12,
+              checkboxInput(ns("enable_edit"), "Enable editing", value = FALSE)
+            )
+          ),
+          fluidRow(
+            column(4, textInput(ns("new_col_name"), "New column name", value = "")),
+            column(3, selectInput(ns("new_col_type"), "New column type", choices = c("character","numeric","logical"), selected = "character")),
+            column(3, uiOutput(ns("new_col_default_ui"))),
+            column(2, div(style = "margin-top: 24px;", actionButton(ns("add_col_btn"), "Add column", class = "btn-primary")))
           ),
           hr(),
           helpText("To overwrite the original Excel file, pick its location and confirm overwrite."),
