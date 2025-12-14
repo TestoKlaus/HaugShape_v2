@@ -129,21 +129,25 @@ plotting_ui <- function(id) {
           width = 12,
           collapsible = TRUE,
           collapsed = TRUE,
-          checkboxInput(ns("export"), "Export using shape_plot", value = FALSE),
           textInput(ns("export_filename"), "Filename (without extension)", value = "shape_plot_output"),
-          uiOutput(ns("export_dir_ui")),
-          textOutput(ns("export_dir_txt")),
-          selectInput(ns("export_format"), "Format", choices = c("tiff","jpg"), selected = "tiff"),
-          checkboxInput(ns("export_custom_size"), "Set custom size (inches)", value = FALSE),
-          conditionalPanel(
-            condition = sprintf("input['%s']", ns("export_custom_size")),
-            numericInput(ns("export_width"), "Width (inches)", value = 8, min = 1, step = 0.5),
-            numericInput(ns("export_height"), "Height (inches)", value = 8, min = 1, step = 0.5)
-          ),
-          numericInput(ns("export_dpi"), "DPI", value = 300, min = 72, step = 10),
+          helpText("Download the plot as an RDS file (R ggplot object) for export in RStudio."),
           tags$hr(),
-          helpText("Prefer to edit the plot later in RStudio? Download the ggplot object:"),
-          downloadButton(ns("download_plot_rds"), "Download ggplot (.rds)")
+          tags$div(
+            style = "background-color: #f8f9fa; padding: 12px; border-radius: 4px; margin: 10px 0;",
+            tags$strong("How to export in RStudio:"),
+            tags$ol(
+              tags$li("Download the .rds file using the button below"),
+              tags$li("Open RStudio and load the plot:", tags$br(),
+                     tags$code("plot <- readRDS('shape_plot_output.rds')")),
+              tags$li("Display the plot:", tags$br(),
+                     tags$code("print(plot)")),
+              tags$li("In the Plots pane, click", tags$strong("Export"), "→ choose your format"),
+              tags$li("Available formats: SVG (editable!), PNG, TIFF, PDF, EPS")
+            ),
+            tags$p(style = "margin-top: 8px; margin-bottom: 0; font-style: italic;",
+                  "💡 SVG exports from RStudio preserve individual plot elements for editing in vector graphics software!")
+          ),
+          downloadButton(ns("download_plot"), "Download ggplot (.rds)", class = "btn-primary")
         ),
         div(style = "margin: 10px 0;",
             actionButton(ns("render"), "Render plot", class = "btn-success btn-lg")
@@ -199,17 +203,6 @@ plotting_server <- function(id, data_reactive) {
       colourpicker_ready(isTRUE(ready))
     })
 
-    # Directory picker for export using shinyFiles
-    shinyfiles_ready <- reactiveVal(FALSE)
-    observe({
-      ready <- requireNamespace("shinyFiles", quietly = TRUE)
-      if (!isTRUE(ready)) {
-        try(install.packages("shinyFiles", repos = "https://cran.r-project.org", quiet = TRUE), silent = TRUE)
-        ready <- requireNamespace("shinyFiles", quietly = TRUE)
-      }
-      shinyfiles_ready(isTRUE(ready))
-    })
-
     # Dynamic per-group point color/fill/shape pickers
     output$point_group_color_pickers <- renderUI({
       if (!isTRUE(colourpicker_ready())) return(NULL)
@@ -232,9 +225,30 @@ plotting_server <- function(id, data_reactive) {
       groups <- if (!is.null(input$group_vals) && length(input$group_vals)) input$group_vals else unique(df[[gcol]])
       pal <- tryCatch({ if (requireNamespace("scales", quietly = TRUE)) scales::hue_pal()(length(groups)) else rep("#1f77b4", length(groups)) }, error = function(...) rep("#1f77b4", length(groups)))
       safe_id <- function(x) gsub("[^A-Za-z0-9_]", "_", as.character(x))
-      picker_list <- mapply(function(g, default_col) {
-        colourpicker::colourInput(ns(paste0("point_fill_", safe_id(g))), paste0("Point fill: ", g), value = default_col)
-      }, groups, pal, SIMPLIFY = FALSE)
+      
+      # Only show fill picker for shapes that support separate fill (21-25)
+      picker_list <- lapply(seq_along(groups), function(i) {
+        g <- groups[i]
+        default_col <- pal[i]
+        shape_val <- input[[paste0("point_shape_", safe_id(g))]]
+        
+        # Only create picker if shape is 21-25 (fillable shapes)
+        if (!is.null(shape_val) && as.numeric(shape_val) >= 21 && as.numeric(shape_val) <= 25) {
+          colourpicker::colourInput(ns(paste0("point_fill_", safe_id(g))), 
+                                   paste0("Point fill: ", g, " (shape ", shape_val, ")"), 
+                                   value = default_col)
+        } else {
+          NULL
+        }
+      })
+      
+      # Remove NULL entries
+      picker_list <- picker_list[!sapply(picker_list, is.null)]
+      
+      if (length(picker_list) == 0) {
+        return(helpText("Fill color only applies to shapes 21-25 (filled shapes with borders)"))
+      }
+      
       do.call(tagList, picker_list)
     })
     output$point_group_shape_pickers <- renderUI({
@@ -243,13 +257,32 @@ plotting_server <- function(id, data_reactive) {
       if (is.null(gcol) || gcol == "" || !gcol %in% names(df)) return(NULL)
       groups <- if (!is.null(input$group_vals) && length(input$group_vals)) input$group_vals else unique(df[[gcol]])
       choices <- c(
-        "Circle filled (21)" = 21,
-        "Circle solid (16)" = 16,
-        "Square filled (22)" = 22,
-        "Diamond filled (23)" = 23,
-        "Triangle up (24)" = 24,
-        "Circle open (1)" = 1,
-        "Square open (0)" = 0
+        "0: Square open" = 0,
+        "1: Circle open" = 1,
+        "2: Triangle up open" = 2,
+        "3: Plus" = 3,
+        "4: Cross" = 4,
+        "5: Diamond open" = 5,
+        "6: Triangle down open" = 6,
+        "7: Square cross" = 7,
+        "8: Star" = 8,
+        "9: Diamond plus" = 9,
+        "10: Circle plus" = 10,
+        "11: Triangles up/down" = 11,
+        "12: Square plus" = 12,
+        "13: Circle cross" = 13,
+        "14: Triangle square" = 14,
+        "15: Square filled" = 15,
+        "16: Circle solid" = 16,
+        "17: Triangle up solid" = 17,
+        "18: Diamond solid" = 18,
+        "19: Circle solid (small)" = 19,
+        "20: Circle dot" = 20,
+        "21: Circle filled" = 21,
+        "22: Square filled" = 22,
+        "23: Diamond filled" = 23,
+        "24: Triangle up filled" = 24,
+        "25: Triangle down filled" = 25
       )
       safe_id <- function(x) gsub("[^A-Za-z0-9_]", "_", as.character(x))
       picker_list <- lapply(groups, function(g) {
@@ -406,42 +439,6 @@ plotting_server <- function(id, data_reactive) {
       if (is.null(gcol) || gcol == "" || !gcol %in% names(df)) return(NULL)
       vals <- unique(df[[gcol]])
       selectInput(ns("shape_groups"), "Shape overlay groups (optional)", choices = vals, selected = vals, multiple = TRUE)
-    })
-
-    # Export directory chooser and display
-    output$export_dir_ui <- renderUI({
-      if (!isTRUE(shinyfiles_ready())) return(helpText("Directory picker unavailable; using working directory"))
-      shinyFiles::shinyDirButton(ns("export_dir"), label = "Choose export folder", title = "Select export folder")
-    })
-    export_dir_path <- reactiveVal("")
-    observeEvent(shinyfiles_ready(), {
-      if (!isTRUE(shinyfiles_ready())) return()
-      roots <- try(shinyFiles::getVolumes()(), silent = TRUE)
-      if (inherits(roots, "try-error") || is.null(roots) || length(roots) == 0) {
-        roots <- c()
-      }
-      if (.Platform$OS.type == "windows" && dir.exists("C:/")) {
-        roots <- c(`C:` = "C:/", roots)
-      }
-      roots <- c(roots, Home = normalizePath("~"), `Working Dir` = normalizePath(getwd()))
-      shinyFiles::shinyDirChoose(input, id = "export_dir", roots = roots, session = session)
-    })
-    observeEvent(input$export_dir, {
-      req(shinyfiles_ready())
-      roots <- try(shinyFiles::getVolumes()(), silent = TRUE)
-      if (inherits(roots, "try-error") || is.null(roots) || length(roots) == 0) {
-        roots <- c()
-      }
-      if (.Platform$OS.type == "windows" && dir.exists("C:/")) {
-        roots <- c(`C:` = "C:/", roots)
-      }
-      roots <- c(roots, Home = normalizePath("~"), `Working Dir` = normalizePath(getwd()))
-      sel <- try(shinyFiles::parseDirPath(roots, input$export_dir), silent = TRUE)
-      if (!inherits(sel, "try-error") && length(sel) > 0) export_dir_path(as.character(sel))
-    })
-    output$export_dir_txt <- renderText({
-      p <- export_dir_path()
-      if (is.null(p) || !nzchar(p)) "No folder selected (using working directory)" else p
     })
 
     # Render plot
@@ -645,21 +642,7 @@ plotting_server <- function(id, data_reactive) {
         show_borders = isTRUE(input$show_borders)
       )
 
-      # Build export options list
-      export_options <- list(
-        export = isTRUE(input$export),
-        filename = if (nzchar(input$export_filename)) input$export_filename else "shape_plot_output",
-        path = {
-          p <- export_dir_path()
-          if (!is.null(p) && nzchar(p)) p else NULL
-        },
-        format = input$export_format,
-        width = if (isTRUE(input$export_custom_size)) input$export_width else NULL,
-        height = if (isTRUE(input$export_custom_size)) input$export_height else NULL,
-        dpi = input$export_dpi
-      )
-
-      # Call shape_plot
+      # Call shape_plot (disable internal export, we use downloadHandler)
       messages("")
       p <- tryCatch({
         shape_plot(
@@ -671,7 +654,7 @@ plotting_server <- function(id, data_reactive) {
           styling = styling,
           features = features,
           labels = labels,
-          export_options = export_options,
+          export_options = list(export = FALSE),
           verbose = TRUE
         )
       }, error = function(e) {
@@ -777,19 +760,19 @@ plotting_server <- function(id, data_reactive) {
       do.call(tagList, rows)
     })
 
-      # Download handler: ggplot object as .rds for further editing in RStudio
-      output$download_plot_rds <- downloadHandler(
-        filename = function() {
-          stem <- input$export_filename
-          if (is.null(stem) || !nzchar(stem)) stem <- "shape_plot_output"
-          paste0(stem, ".rds")
-        },
-        content = function(file) {
-          p <- plot_obj()
-          validate(need(!is.null(p), "No plot has been rendered yet. Click 'Render plot' first."))
-          saveRDS(p, file)
-        }
-      )
+    # Download handler for plot export as RDS
+    output$download_plot <- downloadHandler(
+      filename = function() {
+        stem <- input$export_filename
+        if (is.null(stem) || !nzchar(stem)) stem <- "shape_plot_output"
+        paste0(stem, ".rds")
+      },
+      content = function(file) {
+        p <- plot_obj()
+        validate(need(!is.null(p), "No plot has been rendered yet. Click 'Render plot' first."))
+        saveRDS(p, file)
+      }
+    )
 
     # Removed: hull specimens modal button and observer (now shown inline in the legend)
 
