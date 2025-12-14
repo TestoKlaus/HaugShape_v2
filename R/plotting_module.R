@@ -129,10 +129,7 @@ plotting_ui <- function(id) {
           width = 12,
           collapsible = TRUE,
           collapsed = TRUE,
-          checkboxInput(ns("export"), "Export plot", value = FALSE),
           textInput(ns("export_filename"), "Filename (without extension)", value = "shape_plot_output"),
-          uiOutput(ns("export_dir_ui")),
-          textOutput(ns("export_dir_txt")),
           selectInput(ns("export_format"), "Format", 
                      choices = c("RDS (R object)" = "rds",
                                "SVG (vector)" = "svg",
@@ -150,7 +147,9 @@ plotting_ui <- function(id) {
           ),
           helpText("RDS: Save ggplot object for later editing in R"),
           helpText("SVG: Vector format with base dimensions (scalable)"),
-          helpText("TIFF/PNG: Raster formats with specified dimensions and DPI")
+          helpText("TIFF/PNG: Raster formats with specified dimensions and DPI"),
+          tags$hr(),
+          downloadButton(ns("download_plot"), "Download Plot", class = "btn-primary")
         ),
         div(style = "margin: 10px 0;",
             actionButton(ns("render"), "Render plot", class = "btn-success btn-lg")
@@ -204,17 +203,6 @@ plotting_server <- function(id, data_reactive) {
         ready <- requireNamespace("colourpicker", quietly = TRUE)
       }
       colourpicker_ready(isTRUE(ready))
-    })
-
-    # Directory picker for export using shinyFiles
-    shinyfiles_ready <- reactiveVal(FALSE)
-    observe({
-      ready <- requireNamespace("shinyFiles", quietly = TRUE)
-      if (!isTRUE(ready)) {
-        try(install.packages("shinyFiles", repos = "https://cran.r-project.org", quiet = TRUE), silent = TRUE)
-        ready <- requireNamespace("shinyFiles", quietly = TRUE)
-      }
-      shinyfiles_ready(isTRUE(ready))
     })
 
     # Dynamic per-group point color/fill/shape pickers
@@ -413,42 +401,6 @@ plotting_server <- function(id, data_reactive) {
       if (is.null(gcol) || gcol == "" || !gcol %in% names(df)) return(NULL)
       vals <- unique(df[[gcol]])
       selectInput(ns("shape_groups"), "Shape overlay groups (optional)", choices = vals, selected = vals, multiple = TRUE)
-    })
-
-    # Export directory chooser and display
-    output$export_dir_ui <- renderUI({
-      if (!isTRUE(shinyfiles_ready())) return(helpText("Directory picker unavailable; using working directory"))
-      shinyFiles::shinyDirButton(ns("export_dir"), label = "Choose export folder", title = "Select export folder")
-    })
-    export_dir_path <- reactiveVal("")
-    observeEvent(shinyfiles_ready(), {
-      if (!isTRUE(shinyfiles_ready())) return()
-      roots <- try(shinyFiles::getVolumes()(), silent = TRUE)
-      if (inherits(roots, "try-error") || is.null(roots) || length(roots) == 0) {
-        roots <- c()
-      }
-      if (.Platform$OS.type == "windows" && dir.exists("C:/")) {
-        roots <- c(`C:` = "C:/", roots)
-      }
-      roots <- c(roots, Home = normalizePath("~"), `Working Dir` = normalizePath(getwd()))
-      shinyFiles::shinyDirChoose(input, id = "export_dir", roots = roots, session = session)
-    })
-    observeEvent(input$export_dir, {
-      req(shinyfiles_ready())
-      roots <- try(shinyFiles::getVolumes()(), silent = TRUE)
-      if (inherits(roots, "try-error") || is.null(roots) || length(roots) == 0) {
-        roots <- c()
-      }
-      if (.Platform$OS.type == "windows" && dir.exists("C:/")) {
-        roots <- c(`C:` = "C:/", roots)
-      }
-      roots <- c(roots, Home = normalizePath("~"), `Working Dir` = normalizePath(getwd()))
-      sel <- try(shinyFiles::parseDirPath(roots, input$export_dir), silent = TRUE)
-      if (!inherits(sel, "try-error") && length(sel) > 0) export_dir_path(as.character(sel))
-    })
-    output$export_dir_txt <- renderText({
-      p <- export_dir_path()
-      if (is.null(p) || !nzchar(p)) "No folder selected (using working directory)" else p
     })
 
     # Render plot
@@ -652,21 +604,7 @@ plotting_server <- function(id, data_reactive) {
         show_borders = isTRUE(input$show_borders)
       )
 
-      # Build export options list
-      export_options <- list(
-        export = isTRUE(input$export),
-        filename = if (nzchar(input$export_filename)) input$export_filename else "shape_plot_output",
-        path = {
-          p <- export_dir_path()
-          if (!is.null(p) && nzchar(p)) p else NULL
-        },
-        format = input$export_format,
-        width = if (!is.null(input$export_width)) input$export_width else NULL,
-        height = if (!is.null(input$export_height)) input$export_height else NULL,
-        dpi = if (!is.null(input$export_dpi)) input$export_dpi else 300
-      )
-
-      # Call shape_plot
+      # Call shape_plot (disable internal export, we use downloadHandler)
       messages("")
       p <- tryCatch({
         shape_plot(
@@ -678,7 +616,7 @@ plotting_server <- function(id, data_reactive) {
           styling = styling,
           features = features,
           labels = labels,
-          export_options = export_options,
+          export_options = list(export = FALSE),
           verbose = TRUE
         )
       }, error = function(e) {
@@ -784,7 +722,68 @@ plotting_server <- function(id, data_reactive) {
       do.call(tagList, rows)
     })
 
-    # Removed: download_plot_rds handler (now integrated into main export functionality)
+    # Download handler for plot export
+    output$download_plot <- downloadHandler(
+      filename = function() {
+        stem <- input$export_filename
+        if (is.null(stem) || !nzchar(stem)) stem <- "shape_plot_output"
+        fmt <- input$export_format
+        paste0(stem, ".", fmt)
+      },
+      content = function(file) {
+        p <- plot_obj()
+        validate(need(!is.null(p), "No plot has been rendered yet. Click 'Render plot' first."))
+        
+        fmt <- tolower(input$export_format)
+        
+        tryCatch({
+          if (fmt == "rds") {
+            # Save ggplot object as RDS
+            saveRDS(p, file)
+            
+          } else if (fmt == "svg") {
+            # Export as SVG with dimensions
+            width <- if (!is.null(input$export_width)) input$export_width else 8
+            height <- if (!is.null(input$export_height)) input$export_height else 8
+            
+            ggplot2::ggsave(
+              filename = file,
+              plot = p,
+              width = width,
+              height = height,
+              device = "svg"
+            )
+            
+          } else if (fmt %in% c("tiff", "png")) {
+            # Export as raster with dimensions and DPI
+            width <- input$export_width
+            height <- input$export_height
+            dpi <- if (!is.null(input$export_dpi)) input$export_dpi else 300
+            
+            if (is.null(width) || is.null(height)) {
+              stop("Width and height must be specified for ", toupper(fmt), " export")
+            }
+            
+            ggplot2::ggsave(
+              filename = file,
+              plot = p,
+              width = width,
+              height = height,
+              dpi = dpi,
+              device = fmt
+            )
+          }
+        }, error = function(e) {
+          showNotification(
+            paste("Export failed:", e$message),
+            type = "error",
+            duration = 10
+          )
+          stop(e)
+        })
+      }
+    )
+
     # Removed: hull specimens modal button and observer (now shown inline in the legend)
 
     invisible(list(plot = plot_obj))
