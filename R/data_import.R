@@ -40,6 +40,37 @@ data_import_ui <- function(id) {
           )
         ),
         box(
+          title = "Subset Data",
+          status = "primary",
+          solidHeader = TRUE,
+          width = 12,
+          collapsible = TRUE,
+          collapsed = TRUE,
+          helpText("Filter rows based on column values. Multiple filters are combined with AND logic."),
+          fluidRow(
+            column(3, selectInput(ns("filter_col"), "Column", choices = NULL)),
+            column(3, selectInput(ns("filter_op"), "Operator", 
+                                 choices = c("==" = "eq", "!=" = "ne", ">" = "gt", 
+                                           "<" = "lt", ">=" = "ge", "<=" = "le",
+                                           "contains" = "contains", "starts with" = "starts",
+                                           "ends with" = "ends", "is NA" = "is_na", 
+                                           "is not NA" = "not_na"),
+                                 selected = "eq")),
+            column(3, uiOutput(ns("filter_value_ui"))),
+            column(3, div(style = "margin-top: 24px;", 
+                         actionButton(ns("filter_add"), "Add filter", class = "btn-primary")))
+          ),
+          uiOutput(ns("active_filters_ui")),
+          fluidRow(
+            column(6, div(style = "margin-top: 8px;",
+                         actionButton(ns("filter_apply"), "Apply filters", class = "btn-success"))),
+            column(6, div(style = "margin-top: 8px;",
+                         actionButton(ns("filter_reset"), "Reset to original", class = "btn-warning")))
+          ),
+          br(),
+          textOutput(ns("subset_status"))
+        ),
+        box(
           title = "Map shapes to data",
           status = "primary",
           solidHeader = TRUE,
@@ -124,6 +155,12 @@ data_import_server <- function(id) {
 
     # Working copy of data (editable)
     working_data <- reactiveVal(NULL)
+    
+    # Store original unfiltered data
+    original_data <- reactiveVal(NULL)
+    
+    # Store active filters
+    active_filters <- reactiveVal(list())
 
     # Track selected sheet options
     sheet_names <- reactiveVal(character())
@@ -213,6 +250,176 @@ data_import_server <- function(id) {
     observeEvent(data_reactive(), {
       df <- data_reactive()
       working_data(df)
+      original_data(df)
+      active_filters(list())  # Reset filters when new data loaded
+    })
+
+    # Subsetting logic ----
+    
+    # Update filter column choices
+    observe({
+      df <- original_data()
+      req(df)
+      cols <- names(df)
+      updateSelectInput(session, "filter_col", choices = cols, 
+                       selected = if (!is.null(input$filter_col) && input$filter_col %in% cols) input$filter_col else cols[1])
+    })
+    
+    # Dynamic filter value input (hide for NA checks)
+    output$filter_value_ui <- renderUI({
+      req(input$filter_op)
+      if (input$filter_op %in% c("is_na", "not_na")) {
+        return(NULL)
+      }
+      textInput(ns("filter_value"), "Value", value = "")
+    })
+    
+    # Add filter to list
+    observeEvent(input$filter_add, {
+      req(input$filter_col, input$filter_op)
+      
+      # Get value (not needed for NA checks)
+      val <- if (input$filter_op %in% c("is_na", "not_na")) {
+        NULL
+      } else {
+        req(input$filter_value)
+        input$filter_value
+      }
+      
+      # Create filter object
+      new_filter <- list(
+        col = input$filter_col,
+        op = input$filter_op,
+        value = val,
+        id = length(active_filters()) + 1
+      )
+      
+      # Add to active filters
+      filters <- active_filters()
+      filters[[length(filters) + 1]] <- new_filter
+      active_filters(filters)
+      
+      # Clear value input
+      updateTextInput(session, "filter_value", value = "")
+    })
+    
+    # Display active filters
+    output$active_filters_ui <- renderUI({
+      filters <- active_filters()
+      if (length(filters) == 0) {
+        return(helpText("No filters added yet"))
+      }
+      
+      # Create human-readable filter descriptions with remove buttons
+      filter_rows <- lapply(seq_along(filters), function(i) {
+        f <- filters[[i]]
+        op_text <- switch(f$op,
+          "eq" = "==", "ne" = "!=", "gt" = ">", "lt" = "<", 
+          "ge" = ">=", "le" = "<=", "contains" = "contains",
+          "starts" = "starts with", "ends" = "ends with",
+          "is_na" = "is NA", "not_na" = "is not NA"
+        )
+        desc <- if (is.null(f$value)) {
+          sprintf("%s %s", f$col, op_text)
+        } else {
+          sprintf("%s %s '%s'", f$col, op_text, f$value)
+        }
+        fluidRow(
+          column(9, tags$code(desc)),
+          column(3, actionButton(ns(paste0("remove_filter_", i)), "Remove", 
+                                class = "btn-sm btn-danger"))
+        )
+      })
+      
+      tagList(
+        tags$hr(),
+        tags$strong("Active filters:"),
+        tags$div(style = "margin-top: 8px;", filter_rows)
+      )
+    })
+    
+    # Remove individual filters
+    observe({
+      filters <- active_filters()
+      if (length(filters) == 0) return()
+      
+      lapply(seq_along(filters), function(i) {
+        observeEvent(input[[paste0("remove_filter_", i)]], {
+          current_filters <- active_filters()
+          if (i <= length(current_filters)) {
+            current_filters[[i]] <- NULL
+            active_filters(current_filters)
+          }
+        }, ignoreInit = TRUE)
+      })
+    })
+    
+    # Apply filters
+    observeEvent(input$filter_apply, {
+      df <- original_data()
+      req(df)
+      
+      filters <- active_filters()
+      if (length(filters) == 0) {
+        showNotification("No filters to apply", type = "warning")
+        return()
+      }
+      
+      # Apply each filter
+      filtered <- df
+      for (f in filters) {
+        col_data <- filtered[[f$col]]
+        
+        # Apply operator
+        keep_rows <- switch(f$op,
+          "eq" = col_data == f$value,
+          "ne" = col_data != f$value,
+          "gt" = as.numeric(col_data) > as.numeric(f$value),
+          "lt" = as.numeric(col_data) < as.numeric(f$value),
+          "ge" = as.numeric(col_data) >= as.numeric(f$value),
+          "le" = as.numeric(col_data) <= as.numeric(f$value),
+          "contains" = grepl(f$value, as.character(col_data), fixed = TRUE),
+          "starts" = grepl(paste0("^", f$value), as.character(col_data)),
+          "ends" = grepl(paste0(f$value, "$"), as.character(col_data)),
+          "is_na" = is.na(col_data),
+          "not_na" = !is.na(col_data),
+          rep(TRUE, nrow(filtered))
+        )
+        
+        # Handle NA in comparisons
+        keep_rows[is.na(keep_rows)] <- FALSE
+        
+        filtered <- filtered[keep_rows, , drop = FALSE]
+      }
+      
+      working_data(filtered)
+      showNotification(
+        sprintf("Filtered: %d rows remaining (from %d)", nrow(filtered), nrow(df)),
+        type = "message"
+      )
+    })
+    
+    # Reset to original data
+    observeEvent(input$filter_reset, {
+      df <- original_data()
+      req(df)
+      working_data(df)
+      active_filters(list())
+      showNotification("Data reset to original", type = "message")
+    })
+    
+    # Subset status display
+    output$subset_status <- renderText({
+      orig <- original_data()
+      current <- working_data()
+      if (is.null(orig) || is.null(current)) return("")
+      
+      if (nrow(current) == nrow(orig)) {
+        sprintf("Showing all %d rows", nrow(orig))
+      } else {
+        sprintf("Showing %d of %d rows (%.1f%% filtered)", 
+                nrow(current), nrow(orig), 100 * nrow(current) / nrow(orig))
+      }
     })
 
     # Update group ID column choices for the Group builder
