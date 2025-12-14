@@ -117,18 +117,6 @@ data_import_ui <- function(id) {
           solidHeader = TRUE,
           width = 12,
           collapsible = TRUE,
-          fluidRow(
-            column(12,
-              checkboxInput(ns("enable_edit"), "Enable editing", value = FALSE)
-            )
-          ),
-          fluidRow(
-            column(4, textInput(ns("new_col_name"), "New column name", value = "")),
-            column(3, selectInput(ns("new_col_type"), "New column type", choices = c("character","numeric","logical"), selected = "character")),
-            column(3, uiOutput(ns("new_col_default_ui"))),
-            column(2, div(style = "margin-top: 24px;", actionButton(ns("add_col_btn"), "Add column", class = "btn-primary")))
-          ),
-          hr(),
           helpText("To overwrite the original Excel file, pick its location and confirm overwrite."),
           fluidRow(
             column(6,
@@ -619,61 +607,15 @@ data_import_server <- function(id) {
         display_df$shape <- vapply(display_df$shape, function(x) if (is.null(x)) "NULL" else "Out", character(1))
       }
 
-      # Disable editing for problematic columns
-      non_editable <- which(names(display_df) %in% c("shape"))
-      # DT editable toggle
-      if (isTRUE(input$enable_edit)) {
-        # DataTables expects 0-based column indices for disabling edits
-        disabled_cols <- if (length(non_editable)) (non_editable - 1L) else NULL
-        edit_cfg <- list(target = "cell", disable = list(columns = disabled_cols))
-      } else {
-        edit_cfg <- FALSE
-      }
-
-      # When editing enabled, disable ordering/filter to keep row indices stable
       page_len <- if (!is.null(input$n_rows)) input$n_rows else 20
       DT::datatable(
         display_df,
-        options = list(pageLength = min(50, page_len), scrollX = TRUE, ordering = !isTRUE(input$enable_edit)),
+        options = list(pageLength = min(50, page_len), scrollX = TRUE, ordering = TRUE),
         rownames = FALSE,
-        filter = if (isTRUE(input$enable_edit)) "none" else "top",
+        filter = "top",
         selection = "none",
-        editable = edit_cfg
+        editable = FALSE
       )
-    })
-
-    # Apply cell edits to working_data
-    observeEvent(input$preview_cell_edit, {
-      if (!isTRUE(input$enable_edit)) return()
-      info <- input$preview_cell_edit
-      isolate({
-        df <- working_data(); if (is.null(df)) return()
-  r <- as.integer(info$row); j <- as.integer(info$col) + 1L
-        # Guard
-        if (j < 1 || j > ncol(df) || r < 1 || r > nrow(df)) return()
-        col_name <- names(df)[j]
-        # Skip non-editable
-        if (col_name %in% c("shape")) return()
-        val <- info$value
-        # Coerce to column type
-        if (is.numeric(df[[j]])) {
-          new_val <- suppressWarnings(as.numeric(val))
-        } else if (is.logical(df[[j]])) {
-          v <- tolower(trimws(as.character(val)))
-          new_val <- ifelse(v %in% c("true","t","1","yes"), TRUE,
-                     ifelse(v %in% c("false","f","0","no"), FALSE, NA))
-        } else {
-          new_val <- as.character(val)
-        }
-        df[r, j] <- new_val
-        working_data(df)
-        # Update the rendered table in place to avoid full re-render and scroll jumps
-        display_df <- df
-        if ("shape" %in% names(display_df) && is.list(display_df$shape)) {
-          display_df$shape <- vapply(display_df$shape, function(x) if (is.null(x)) "NULL" else "Out", character(1))
-        }
-        DT::replaceData(proxy, display_df, resetPaging = FALSE, rownames = FALSE)
-      })
     })
 
     # Group builder rules handling ------------------------------------------
@@ -777,46 +719,6 @@ data_import_server <- function(id) {
 
 
     # Export removed: edits apply in-place to working_data and propagate downstream
-    # New column default UI based on type
-    output$new_col_default_ui <- renderUI({
-      type <- input$new_col_type %||% "character"
-      if (identical(type, "numeric")) {
-        numericInput(ns("new_col_default"), "Default", value = 0)
-      } else if (identical(type, "logical")) {
-        checkboxInput(ns("new_col_default"), "Default", value = FALSE)
-      } else {
-        textInput(ns("new_col_default"), "Default", value = "")
-      }
-    })
-
-    # Add new column
-    observeEvent(input$add_col_btn, {
-      name <- input$new_col_name
-      type <- input$new_col_type
-      if (is.null(name) || !nzchar(name)) {
-        showNotification("Please provide a column name.", type = "warning"); return()
-      }
-      df <- working_data(); if (is.null(df)) df <- data_reactive(); req(df)
-      if (name %in% names(df)) {
-        showNotification("A column with that name already exists.", type = "error"); return()
-      }
-      n <- nrow(df)
-      # Fetch default value
-      def <- input$new_col_default
-      if (identical(type, "numeric")) {
-        def <- suppressWarnings(as.numeric(def)); if (is.na(def)) def <- NA_real_
-        df[[name]] <- rep(def, n)
-      } else if (identical(type, "logical")) {
-        def <- isTRUE(def)
-        df[[name]] <- rep(def, n)
-      } else {
-        df[[name]] <- rep(as.character(def %||% ""), n)
-      }
-      working_data(df)
-      showNotification(paste0("Column '", name, "' added."), type = "message")
-    })
-
-    # Types preview removed as requested
 
     # Return a list of reactives for downstream use
     return(list(
