@@ -130,10 +130,23 @@ plotting_ui <- function(id) {
           collapsible = TRUE,
           collapsed = TRUE,
           textInput(ns("export_filename"), "Filename (without extension)", value = "shape_plot_output"),
-          helpText("Download the plot as an RDS file (R ggplot object)."),
-          helpText("Then open it in RStudio and use File > Export to save as SVG, PNG, TIFF, or PDF."),
-          helpText("This preserves individual plot elements for editing in SVG!"),
+          helpText("Download the plot as an RDS file (R ggplot object) for export in RStudio."),
           tags$hr(),
+          tags$div(
+            style = "background-color: #f8f9fa; padding: 12px; border-radius: 4px; margin: 10px 0;",
+            tags$strong("How to export in RStudio:"),
+            tags$ol(
+              tags$li("Download the .rds file using the button below"),
+              tags$li("Open RStudio and load the plot:", tags$br(),
+                     tags$code("plot <- readRDS('shape_plot_output.rds')")),
+              tags$li("Display the plot:", tags$br(),
+                     tags$code("print(plot)")),
+              tags$li("In the Plots pane, click", tags$strong("Export"), "→ choose your format"),
+              tags$li("Available formats: SVG (editable!), PNG, TIFF, PDF, EPS")
+            ),
+            tags$p(style = "margin-top: 8px; margin-bottom: 0; font-style: italic;",
+                  "💡 SVG exports from RStudio preserve individual plot elements for editing in vector graphics software!")
+          ),
           downloadButton(ns("download_plot"), "Download ggplot (.rds)", class = "btn-primary")
         ),
         div(style = "margin: 10px 0;",
@@ -212,9 +225,30 @@ plotting_server <- function(id, data_reactive) {
       groups <- if (!is.null(input$group_vals) && length(input$group_vals)) input$group_vals else unique(df[[gcol]])
       pal <- tryCatch({ if (requireNamespace("scales", quietly = TRUE)) scales::hue_pal()(length(groups)) else rep("#1f77b4", length(groups)) }, error = function(...) rep("#1f77b4", length(groups)))
       safe_id <- function(x) gsub("[^A-Za-z0-9_]", "_", as.character(x))
-      picker_list <- mapply(function(g, default_col) {
-        colourpicker::colourInput(ns(paste0("point_fill_", safe_id(g))), paste0("Point fill: ", g), value = default_col)
-      }, groups, pal, SIMPLIFY = FALSE)
+      
+      # Only show fill picker for shapes that support separate fill (21-25)
+      picker_list <- lapply(seq_along(groups), function(i) {
+        g <- groups[i]
+        default_col <- pal[i]
+        shape_val <- input[[paste0("point_shape_", safe_id(g))]]
+        
+        # Only create picker if shape is 21-25 (fillable shapes)
+        if (!is.null(shape_val) && as.numeric(shape_val) >= 21 && as.numeric(shape_val) <= 25) {
+          colourpicker::colourInput(ns(paste0("point_fill_", safe_id(g))), 
+                                   paste0("Point fill: ", g, " (shape ", shape_val, ")"), 
+                                   value = default_col)
+        } else {
+          NULL
+        }
+      })
+      
+      # Remove NULL entries
+      picker_list <- picker_list[!sapply(picker_list, is.null)]
+      
+      if (length(picker_list) == 0) {
+        return(helpText("Fill color only applies to shapes 21-25 (filled shapes with borders)"))
+      }
+      
       do.call(tagList, picker_list)
     })
     output$point_group_shape_pickers <- renderUI({
@@ -223,13 +257,32 @@ plotting_server <- function(id, data_reactive) {
       if (is.null(gcol) || gcol == "" || !gcol %in% names(df)) return(NULL)
       groups <- if (!is.null(input$group_vals) && length(input$group_vals)) input$group_vals else unique(df[[gcol]])
       choices <- c(
-        "Circle filled (21)" = 21,
-        "Circle solid (16)" = 16,
-        "Square filled (22)" = 22,
-        "Diamond filled (23)" = 23,
-        "Triangle up (24)" = 24,
-        "Circle open (1)" = 1,
-        "Square open (0)" = 0
+        "0: Square open" = 0,
+        "1: Circle open" = 1,
+        "2: Triangle up open" = 2,
+        "3: Plus" = 3,
+        "4: Cross" = 4,
+        "5: Diamond open" = 5,
+        "6: Triangle down open" = 6,
+        "7: Square cross" = 7,
+        "8: Star" = 8,
+        "9: Diamond plus" = 9,
+        "10: Circle plus" = 10,
+        "11: Triangles up/down" = 11,
+        "12: Square plus" = 12,
+        "13: Circle cross" = 13,
+        "14: Triangle square" = 14,
+        "15: Square filled" = 15,
+        "16: Circle solid" = 16,
+        "17: Triangle up solid" = 17,
+        "18: Diamond solid" = 18,
+        "19: Circle solid (small)" = 19,
+        "20: Circle dot" = 20,
+        "21: Circle filled" = 21,
+        "22: Square filled" = 22,
+        "23: Diamond filled" = 23,
+        "24: Triangle up filled" = 24,
+        "25: Triangle down filled" = 25
       )
       safe_id <- function(x) gsub("[^A-Za-z0-9_]", "_", as.character(x))
       picker_list <- lapply(groups, function(g) {
