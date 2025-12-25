@@ -1010,7 +1010,9 @@ plotting_server <- function(id, data_reactive) {
           type = "data_point",
           id = point_id,
           pc1 = df[[x_col]][point_idx],
-          pc2 = df[[y_col]][point_idx]
+          pc2 = df[[y_col]][point_idx],
+          x_col = x_col,
+          y_col = y_col
         )
         
         # Check if shape column exists
@@ -1050,6 +1052,8 @@ plotting_server <- function(id, data_reactive) {
               type = "reconstructed",
               pc1 = pc1,
               pc2 = pc2,
+              x_col = x_col,
+              y_col = y_col,
               shape_source = "reconstruction"
             )
             
@@ -1107,24 +1111,30 @@ plotting_server <- function(id, data_reactive) {
       }
       
       if (info$type == "data_point") {
+        x_label <- if (!is.null(info$x_col)) info$x_col else "PC1"
+        y_label <- if (!is.null(info$y_col)) info$y_col else "PC2"
         paste0(
           "Data Point\n",
           "ID: ", info$id, "\n",
-          "PC1: ", round(info$pc1, 3), "\n",
-          "PC2: ", round(info$pc2, 3), "\n",
+          x_label, ": ", round(info$pc1, 3), "\n",
+          y_label, ": ", round(info$pc2, 3), "\n",
           if (!is.null(info$shape_coords)) "Source: Original shape from data" else "No shape data available"
         )
       } else if (info$type == "reconstructed") {
+        x_label <- if (!is.null(info$x_col)) info$x_col else "PC1"
+        y_label <- if (!is.null(info$y_col)) info$y_col else "PC2"
         paste0(
           "Hypothetical Shape (Reconstructed)\n",
-          "PC1: ", round(info$pc1, 3), "\n",
-          "PC2: ", round(info$pc2, 3), "\n",
+          x_label, ": ", round(info$pc1, 3), "\n",
+          y_label, ": ", round(info$pc2, 3), "\n",
           "Other PCs: 0 (at mean)\n",
           "Source: Real-time reconstruction from PCA model"
         )
       } else if (info$type == "no_model") {
+        x_label <- if (!is.null(info$x_col)) info$x_col else "PC1"
+        y_label <- if (!is.null(info$y_col)) info$y_col else "PC2"
         paste0(
-          "Position: PC1 = ", round(info$pc1, 3), ", PC2 = ", round(info$pc2, 3), "\n",
+          "Position: ", x_label, " = ", round(info$pc1, 3), ", ", y_label, " = ", round(info$pc2, 3), "\n",
           "No PCA model loaded - reconstruction not available"
         )
       } else if (info$type == "error") {

@@ -314,11 +314,49 @@ shape_plot <- function(data,
       }
     }
     
-    # Configure for better interaction
+    # Configure for better interaction and styling
     plotly_plot <- plotly::layout(
       plotly_plot,
       hovermode = "closest",
-      dragmode = "pan"
+      dragmode = "pan",
+      # Preserve axis styling from ggplot
+      xaxis = list(
+        title = list(
+          text = if (!is.null(plot$labels$x)) plot$labels$x else x_col,
+          font = list(size = 14, family = "sans-serif")
+        ),
+        showgrid = TRUE,
+        gridcolor = "rgba(200,200,200,0.3)",
+        zeroline = TRUE,
+        zerolinecolor = "rgba(0,0,0,0.5)",
+        showline = TRUE,
+        linecolor = "black",
+        mirror = FALSE,
+        ticks = "outside",
+        ticklen = 5,
+        tickwidth = 1,
+        tickcolor = "black"
+      ),
+      yaxis = list(
+        title = list(
+          text = if (!is.null(plot$labels$y)) plot$labels$y else y_col,
+          font = list(size = 14, family = "sans-serif")
+        ),
+        showgrid = TRUE,
+        gridcolor = "rgba(200,200,200,0.3)",
+        zeroline = TRUE,
+        zerolinecolor = "rgba(0,0,0,0.5)",
+        showline = TRUE,
+        linecolor = "black",
+        mirror = FALSE,
+        ticks = "outside",
+        ticklen = 5,
+        tickwidth = 1,
+        tickcolor = "black"
+      ),
+      # Set plot background
+      plot_bgcolor = "white",
+      paper_bgcolor = "white"
     )
     
     # Attach PCA model if provided (for Shiny use)
