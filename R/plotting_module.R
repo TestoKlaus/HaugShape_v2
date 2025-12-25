@@ -1032,8 +1032,19 @@ plotting_server <- function(id, data_reactive) {
         
         if (!is.null(model)) {
           tryCatch({
-            # Reconstruct shape from hover coordinates
-            coords <- .reconstruct_shape_from_hover(model, pc1, pc2, nb_pts = 120)
+            # Extract PC indices from column names (e.g., "PC1" -> 1, "PC3" -> 3)
+            x_pc_index <- as.integer(gsub("PC", "", x_col))
+            y_pc_index <- as.integer(gsub("PC", "", y_col))
+            
+            # Reconstruct shape from hover coordinates with correct PC axes
+            coords <- .reconstruct_shape_from_hover(
+              model, 
+              x_value = pc1, 
+              y_value = pc2, 
+              x_pc_index = x_pc_index, 
+              y_pc_index = y_pc_index,
+              nb_pts = 120
+            )
             
             point_info <- list(
               type = "reconstructed",

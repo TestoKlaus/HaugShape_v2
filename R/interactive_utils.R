@@ -242,23 +242,30 @@ convert_to_interactive_plot <- function(gg_plot, data, x_col, y_col,
 #' during hover events. Wrapper around reconstruction functions.
 #'
 #' @param pca_model PCA model list (from load_pca_model_for_plotting or extract_pca_model)
-#' @param pc1 PC1 coordinate value
-#' @param pc2 PC2 coordinate value
+#' @param x_value X-axis coordinate value
+#' @param y_value Y-axis coordinate value
+#' @param x_pc_index PC index for x-axis (e.g., 1 for PC1, 3 for PC3)
+#' @param y_pc_index PC index for y-axis (e.g., 2 for PC2, 4 for PC4)
 #' @param other_pcs Named vector of other PC values (default: all zeros)
 #' @param nb_pts Number of points for shape outline (default: 120)
 #' @return Matrix of x,y coordinates for the reconstructed shape
 #' @noRd
-.reconstruct_shape_from_hover <- function(pca_model, pc1, pc2, other_pcs = NULL, nb_pts = 120) {
+.reconstruct_shape_from_hover <- function(pca_model, x_value, y_value, 
+                                          x_pc_index = 1, y_pc_index = 2, 
+                                          other_pcs = NULL, nb_pts = 120) {
   # Construct PC scores vector
   n_pcs <- length(pca_model$sdev)
   pc_scores <- rep(0, n_pcs)
-  pc_scores[1] <- pc1
-  pc_scores[2] <- pc2
+  
+  # Set the values for the plotted PCs
+  pc_scores[x_pc_index] <- x_value
+  pc_scores[y_pc_index] <- y_value
   
   # Add any other specified PCs
   if (!is.null(other_pcs) && length(other_pcs) > 0) {
     pc_indices <- as.integer(gsub("PC", "", names(other_pcs)))
-    pc_indices <- pc_indices[pc_indices > 2 & pc_indices <= n_pcs]
+    # Don't override the x and y axes
+    pc_indices <- pc_indices[!pc_indices %in% c(x_pc_index, y_pc_index) & pc_indices <= n_pcs]
     if (length(pc_indices) > 0) {
       pc_scores[pc_indices] <- other_pcs[paste0("PC", pc_indices)]
     }
