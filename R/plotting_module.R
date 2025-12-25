@@ -1169,7 +1169,7 @@ plotting_server <- function(id, data_reactive) {
       
       # Calculate dynamic heights based on window size
       plot_height <- "calc(100vh - 200px)"  # Full viewport height minus header/footer
-      preview_height <- "calc(100vh - 500px)"  # Smaller preview to avoid scrolling for info text
+      preview_height <- "calc(100vh - 700px)"  # Much smaller preview to ensure info text is visible
       
       showModal(modalDialog(
         title = "Interactive Morphospace Explorer",
