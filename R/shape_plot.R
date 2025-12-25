@@ -236,6 +236,30 @@ shape_plot <- function(data,
     # Convert to plotly with event source for Shiny reactivity
     plotly_plot <- plotly::ggplotly(plot, tooltip = "text", source = "morphospace")
     
+    # Reorder traces to ensure points are on top of hulls/polygons
+    # This is crucial for hover events to work correctly on data points
+    if (length(plotly_plot$x$data) > 1) {
+      # Identify point traces vs polygon/fill traces
+      point_indices <- which(sapply(plotly_plot$x$data, function(trace) {
+        # Points have mode="markers" or type="scatter" with markers
+        (!is.null(trace$mode) && grepl("markers", trace$mode)) ||
+        (!is.null(trace$type) && trace$type == "scatter" && !is.null(trace$marker))
+      }))
+      
+      polygon_indices <- which(sapply(plotly_plot$x$data, function(trace) {
+        # Polygons typically have fill or are paths without markers
+        (!is.null(trace$fill) && trace$fill != "none") ||
+        (!is.null(trace$mode) && trace$mode == "lines" && is.null(trace$marker))
+      }))
+      
+      # Reorder: polygons first, then points on top
+      if (length(point_indices) > 0 && length(polygon_indices) > 0) {
+        other_indices <- setdiff(seq_along(plotly_plot$x$data), c(point_indices, polygon_indices))
+        new_order <- c(polygon_indices, other_indices, point_indices)
+        plotly_plot$x$data <- plotly_plot$x$data[new_order]
+      }
+    }
+    
     # Configure for better interaction
     plotly_plot <- plotly::layout(
       plotly_plot,

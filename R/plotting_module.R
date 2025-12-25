@@ -164,6 +164,7 @@ plotting_ui <- function(id) {
             hr(),
             tags$strong("Manual PCA Model Selection:"),
             uiOutput(ns("pca_model_file_ui")),
+            helpText("Select any of the PCA model CSV files (rotation, center, or sdev). The other files will be loaded automatically from the same directory."),
             actionButton(ns("load_pca_model_btn"), "Load PCA Model", class = "btn-primary"),
             hr(),
             uiOutput(ns("pca_model_status")),

@@ -2,6 +2,11 @@
 #'
 #' Helper functions for interactive morphospace plots with real-time shape reconstruction.
 
+# Helper operator for NULL coalescing
+`%||%` <- function(a, b) {
+  if (is.null(a)) b else a
+}
+
 #' Extract PCA model components for caching
 #'
 #' Extracts the essential PCA model components (rotation, center, sdev, method)
@@ -34,40 +39,71 @@ extract_pca_model <- function(pca_obj) {
 #' Load PCA model from CSV files for plotting
 #'
 #' Auto-detects and loads PCA model CSV files created by shape_analysis().
-#' Looks for files in the same directory as the data file with matching base names.
+#' Can accept either a folder path, or a path to any of the PCA CSV files.
 #'
-#' @param data_file_path Path to the Excel/CSV file with PC scores
+#' @param data_file_path Path to folder containing PCA CSV files, or path to any PCA CSV file
+#'   (e.g., *_pca_rotation.csv, *_pca_center.csv, or *_pca_sdev.csv)
 #' @return A list containing the PCA model components, or NULL if not found
 #' @export
 load_pca_model_for_plotting <- function(data_file_path) {
-  if (!file.exists(data_file_path)) {
-    warning("Data file not found: ", data_file_path)
+  if (is.null(data_file_path) || !nzchar(data_file_path)) {
+    warning("No file path provided")
     return(NULL)
   }
   
-  # Get directory and base name
-  data_dir <- dirname(data_file_path)
-  base_name <- tools::file_path_sans_ext(basename(data_file_path))
+  # Determine the base path
+  if (dir.exists(data_file_path)) {
+    # It's a directory - look for rotation file
+    csv_files <- list.files(data_file_path, pattern = "_pca_rotation\\.csv$", full.names = TRUE)
+    if (length(csv_files) == 0) {
+      message("No PCA model files found in directory: ", data_file_path)
+      return(NULL)
+    }
+    rotation_path <- csv_files[1]
+    base_path <- sub("_pca_rotation\\.csv$", "", rotation_path)
+  } else if (file.exists(data_file_path)) {
+    # It's a file - determine which type and extract base name
+    if (grepl("_pca_rotation\\.csv$", data_file_path)) {
+      base_path <- sub("_pca_rotation\\.csv$", "", data_file_path)
+    } else if (grepl("_pca_center\\.csv$", data_file_path)) {
+      base_path <- sub("_pca_center\\.csv$", "", data_file_path)
+    } else if (grepl("_pca_sdev\\.csv$", data_file_path)) {
+      base_path <- sub("_pca_sdev\\.csv$", "", data_file_path)
+    } else {
+      # Assume it's a data file and try to construct PCA file paths
+      data_dir <- dirname(data_file_path)
+      base_name <- tools::file_path_sans_ext(basename(data_file_path))
+      base_path <- file.path(data_dir, base_name)
+    }
+  } else {
+    warning("File or directory not found: ", data_file_path)
+    return(NULL)
+  }
   
-  # Construct expected file paths
-  rotation_path <- file.path(data_dir, paste0(base_name, "_pca_rotation.csv"))
-  center_path <- file.path(data_dir, paste0(base_name, "_pca_center.csv"))
-  sdev_path <- file.path(data_dir, paste0(base_name, "_pca_sdev.csv"))
-  metadata_path <- file.path(data_dir, paste0(base_name, "_reconstruction_metadata.txt"))
+  # Construct expected file paths from base path
+  rotation_path <- paste0(base_path, "_pca_rotation.csv")
+  center_path <- paste0(base_path, "_pca_center.csv")
+  sdev_path <- paste0(base_path, "_pca_sdev.csv")
+  metadata_path <- paste0(base_path, "_reconstruction_metadata.txt")
   
   # Check if files exist
   if (!file.exists(rotation_path) || !file.exists(center_path) || !file.exists(sdev_path)) {
-    message("PCA model files not found for interactive mode. Expected files:")
+    message("PCA model files not found. Expected files:")
     message("  - ", basename(rotation_path))
     message("  - ", basename(center_path))
     message("  - ", basename(sdev_path))
+    message("Base path used: ", base_path)
     return(NULL)
   }
   
-  # Load files using existing function if available
+  # Try using load_reconstruction_csv if available
   if (exists("load_reconstruction_csv", mode = "function")) {
     tryCatch({
-      model <- load_reconstruction_csv(data_dir)
+      model <- load_reconstruction_csv(rotation_path, verbose = FALSE)
+      message("Successfully loaded PCA model")
+      message("  Method: ", model$method %||% "efourier")
+      message("  Harmonics: ", model$n_harmonics %||% "unknown")
+      message("  PCs available: ", length(model$sdev))
       return(model)
     }, error = function(e) {
       warning("Failed to load PCA model using load_reconstruction_csv: ", e$message)
