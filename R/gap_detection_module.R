@@ -238,35 +238,7 @@ gap_detection_ui <- function(id) {
             value = TRUE
           ),
           
-          conditionalPanel(
-            condition = sprintf("input['%s']", ns("auto_save")),
-            ns = ns,
-            
-            fluidRow(
-              column(
-                width = 9,
-                textInput(
-                  ns("output_folder"),
-                  "Output Folder",
-                  value = getwd(),
-                  placeholder = "Path to save results"
-                )
-              ),
-              column(
-                width = 3,
-                br(),
-                shinyFiles::shinyDirButton(
-                  ns("browse_folder"),
-                  "Browse...",
-                  title = "Select output folder",
-                  icon = icon("folder-open"),
-                  class = "btn-default"
-                )
-              )
-            ),
-            
-            helpText("Results will be saved as: gap_results_YYYYMMDD_HHMMSS.rds")
-          ),
+          uiOutput(ns("output_folder_ui")),
           
           hr(),
           
@@ -304,21 +276,9 @@ gap_detection_ui <- function(id) {
             
             uiOutput(ns("analysis_summary_ui")),
             
-            conditionalPanel(
-              condition = sprintf("input['%s']", ns("auto_save")),
-              ns = ns,
-              
-              hr(),
-              
-              div(
-                style = "padding: 10px; background-color: #d4edda; border: 1px solid #28a745; border-radius: 4px;",
-                tags$strong(icon("check"), " Results saved to:"),
-                br(),
-                verbatimTextOutput(ns("saved_file_path"))
-              )
-            ),
-            
             br(),
+            
+            uiOutput(ns("saved_file_display")),
             
             downloadButton(
               ns("download_results_rds"),
@@ -566,6 +526,49 @@ gap_detection_server <- function(id) {
       head(rv$pca_data, 3)
     })
     
+    # Output folder UI
+    output$output_folder_ui <- renderUI({
+      if (!isTRUE(input$auto_save)) {
+        return(NULL)
+      }
+      
+      tagList(
+        fluidRow(
+          column(
+            width = 9,
+            textInput(
+              ns("output_folder"),
+              "Output Folder",
+              value = getwd(),
+              placeholder = "Path to save results"
+            )
+          ),
+          column(
+            width = 3,
+            br(),
+            if (isTRUE(shinyfiles_ready())) {
+              shinyFiles::shinyDirButton(
+                ns("browse_folder"),
+                "Browse...",
+                title = "Select output folder",
+                icon = icon("folder-open"),
+                class = "btn-default"
+              )
+            } else {
+              actionButton(
+                ns("browse_folder_disabled"),
+                "Browse...",
+                icon = icon("folder-open"),
+                class = "btn-default",
+                disabled = TRUE
+              )
+            }
+          )
+        ),
+        helpText("Results will be saved as: gap_results_YYYYMMDD_HHMMSS.rds")
+      )
+    })
+    
     # Run analysis
     observeEvent(input$run_analysis, {
       req(rv$pca_data)
@@ -739,6 +742,23 @@ gap_detection_server <- function(id) {
         return("(Results not saved)")
       }
       rv$saved_file_path
+    })
+    
+    # Saved file display UI
+    output$saved_file_display <- renderUI({
+      if (!isTRUE(input$auto_save) || is.null(rv$saved_file_path)) {
+        return(NULL)
+      }
+      
+      tagList(
+        hr(),
+        div(
+          style = "padding: 10px; background-color: #d4edda; border: 1px solid #28a745; border-radius: 4px;",
+          tags$strong(icon("check"), " Results saved to:"),
+          br(),
+          tags$code(rv$saved_file_path, style = "font-size: 11px; word-break: break-all;")
+        )
+      )
     })
     
     # PC pair selector
