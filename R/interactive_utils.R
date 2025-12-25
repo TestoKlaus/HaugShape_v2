@@ -291,24 +291,24 @@ convert_to_interactive_plot <- function(gg_plot, data, x_col, y_col,
   
   # Call appropriate inverse Fourier function
   coords <- switch(method,
-    efourier = efourier_i(coef_list, nb.h = n_harmonics, nb.pts = nb_pts, verbose = FALSE),
+    efourier = efourier_i(coef_list, nb.h = n_harmonics, nb.pts = nb_pts),
     rfourier = if (exists("rfourier_i", mode = "function")) {
-      rfourier_i(coef_list, nb.h = n_harmonics, nb.pts = nb_pts, verbose = FALSE)
+      rfourier_i(coef_list, nb.h = n_harmonics, nb.pts = nb_pts)
     } else {
-      efourier_i(coef_list, nb.h = n_harmonics, nb.pts = nb_pts, verbose = FALSE)
+      efourier_i(coef_list, nb.h = n_harmonics, nb.pts = nb_pts)
     },
     tfourier = if (exists("tfourier_i", mode = "function")) {
-      tfourier_i(coef_list, nb.h = n_harmonics, nb.pts = nb_pts, verbose = FALSE)
+      tfourier_i(coef_list, nb.h = n_harmonics, nb.pts = nb_pts)
     } else {
-      efourier_i(coef_list, nb.h = n_harmonics, nb.pts = nb_pts, verbose = FALSE)
+      efourier_i(coef_list, nb.h = n_harmonics, nb.pts = nb_pts)
     },
     sfourier = if (exists("sfourier_i", mode = "function")) {
-      sfourier_i(coef_list, nb.h = n_harmonics, nb.pts = nb_pts, verbose = FALSE)
+      sfourier_i(coef_list, nb.h = n_harmonics, nb.pts = nb_pts)
     } else {
-      efourier_i(coef_list, nb.h = n_harmonics, nb.pts = nb_pts, verbose = FALSE)
+      efourier_i(coef_list, nb.h = n_harmonics, nb.pts = nb_pts)
     },
     # Default to efourier
-    efourier_i(coef_list, nb.h = n_harmonics, nb.pts = nb_pts, verbose = FALSE)
+    efourier_i(coef_list, nb.h = n_harmonics, nb.pts = nb_pts)
   )
   
   return(coords)
