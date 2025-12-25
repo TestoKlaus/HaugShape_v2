@@ -319,37 +319,25 @@ shape_plot <- function(data,
       plotly_plot,
       hovermode = "closest",
       dragmode = "pan",
-      # Preserve axis styling from ggplot
+      # Minimal axis styling - no labels, no ticks, no grid
       xaxis = list(
-        title = list(
-          text = if (!is.null(plot$labels$x)) plot$labels$x else x_col,
-          font = list(size = 14, family = "sans-serif")
-        ),
+        title = "",
         showgrid = FALSE,
         zeroline = TRUE,
         zerolinecolor = "rgba(0,0,0,0.5)",
         showline = FALSE,
         mirror = FALSE,
-        ticks = "outside",
-        ticklen = 5,
-        tickwidth = 1,
-        tickcolor = "black",
+        ticks = "",
         showticklabels = FALSE
       ),
       yaxis = list(
-        title = list(
-          text = if (!is.null(plot$labels$y)) plot$labels$y else y_col,
-          font = list(size = 14, family = "sans-serif")
-        ),
+        title = "",
         showgrid = FALSE,
         zeroline = TRUE,
         zerolinecolor = "rgba(0,0,0,0.5)",
         showline = FALSE,
         mirror = FALSE,
-        ticks = "outside",
-        ticklen = 5,
-        tickwidth = 1,
-        tickcolor = "black",
+        ticks = "",
         showticklabels = FALSE
       ),
       # Set plot background
