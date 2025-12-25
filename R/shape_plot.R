@@ -15,6 +15,10 @@
 #'   See Details for available options.
 #' @param labels List containing label options (title, axis labels).
 #' @param export_options List containing export options. See Details for available options.
+#' @param interactive Logical indicating whether to enable interactive plotly mode. Default: FALSE.
+#'   When TRUE, returns a plotly object with hover events. Requires plotly package.
+#' @param pca_model Optional PCA model list for interactive reconstruction. Only used when interactive = TRUE.
+#'   If provided, enables real-time shape reconstruction on hover. Can be created with extract_pca_model().
 #' @param verbose Logical indicating whether to print progress messages. Default: TRUE.
 #'
 #' @details
@@ -53,7 +57,12 @@
 #' - SVG: Vector format with base dimensions (scalable without quality loss)
 #' - TIFF/PNG: Raster formats requiring width, height, and DPI specifications
 #'
-#' @return A ggplot2 object representing the scatter plot.
+#' When \code{interactive = TRUE}, the plot is converted to plotly for interactive exploration.
+#' If \code{pca_model} is also provided, hovering over the morphospace will show:
+#' - For data points: ID and existing shape (if available in data)
+#' - For empty space: Reconstructed hypothetical shape at those PC coordinates
+#'
+#' @return A ggplot2 object (default) or plotly object (when interactive = TRUE).
 #'
 #' @examples
 #' # Basic scatter plot
@@ -102,6 +111,8 @@ shape_plot <- function(data,
                       features = list(),
                       labels = list(),
                       export_options = list(),
+                      interactive = FALSE,
+                      pca_model = NULL,
                       verbose = TRUE) {
   
   # Input validation ----
@@ -194,6 +205,155 @@ shape_plot <- function(data,
   # Export if requested ----
   if (params$export_options$export) {
     .export_plot(plot, params$export_options, verbose)
+  }
+  
+  # Convert to interactive plotly if requested ----
+  if (interactive) {
+    if (!requireNamespace("plotly", quietly = TRUE)) {
+      warning("Package 'plotly' is required for interactive mode. Returning static ggplot2 object.")
+      return(plot)
+    }
+    
+    if (verbose) {
+      message("Converting to interactive plotly plot...")
+    }
+    
+    # Create custom hover text with IDs
+    hover_data <- clean_data
+    id_col <- if ("ID" %in% names(hover_data)) "ID" else NULL
+    
+    if (!is.null(id_col)) {
+      hover_text <- paste0(
+        "ID: ", hover_data[[id_col]], "\n",
+        x_col, ": ", round(hover_data[[x_col]], 3), "\n",
+        y_col, ": ", round(hover_data[[y_col]], 3)
+      )
+      
+      # Store hover text in plot data for plotly conversion
+      plot$data$text <- hover_text
+    }
+    
+    # Convert to plotly with event source for Shiny reactivity
+    plotly_plot <- plotly::ggplotly(plot, tooltip = "text", source = "morphospace")
+    
+    # Add invisible background grid to capture hover events across entire plot area
+    # This allows reconstruction to work everywhere, not just near data points
+    if (!is.null(pca_model)) {
+      # Get plot range from data
+      x_range <- range(clean_data[[x_col]], na.rm = TRUE)
+      y_range <- range(clean_data[[y_col]], na.rm = TRUE)
+      
+      # Expand range slightly
+      x_padding <- diff(x_range) * 0.1
+      y_padding <- diff(y_range) * 0.1
+      x_range <- x_range + c(-x_padding, x_padding)
+      y_range <- y_range + c(-y_padding, y_padding)
+      
+      # Create a grid of invisible points covering the plot area
+      grid_density <- 50  # Points per axis
+      x_grid <- seq(x_range[1], x_range[2], length.out = grid_density)
+      y_grid <- seq(y_range[1], y_range[2], length.out = grid_density)
+      grid_points <- expand.grid(x = x_grid, y = y_grid)
+      
+      # Add invisible trace at the beginning (will be rendered first, below everything)
+      invisible_trace <- list(
+        x = grid_points$x,
+        y = grid_points$y,
+        type = "scatter",
+        mode = "markers",
+        marker = list(
+          size = 8,
+          opacity = 0,  # Completely invisible
+          color = "rgba(0,0,0,0)"
+        ),
+        hoverinfo = "x+y",
+        hovertemplate = paste0(x_col, ": %{x:.3f}<br>", y_col, ": %{y:.3f}<extra></extra>"),
+        showlegend = FALSE,
+        name = "morphospace"
+      )
+      
+      # Insert at beginning so it's rendered first (bottom layer)
+      plotly_plot$x$data <- c(list(invisible_trace), plotly_plot$x$data)
+    }
+    
+    # Reorder traces to ensure points are on top of hulls/polygons
+    # This is crucial for hover events to work correctly on data points
+    if (length(plotly_plot$x$data) > 1) {
+      # Skip the first trace if it's our invisible background grid
+      start_idx <- if (!is.null(pca_model)) 2 else 1
+      traces_to_check <- seq(start_idx, length(plotly_plot$x$data))
+      
+      # Identify point traces vs polygon/fill traces
+      point_indices <- which(sapply(traces_to_check, function(idx) {
+        trace <- plotly_plot$x$data[[idx]]
+        # Points have mode="markers" or type="scatter" with markers
+        (!is.null(trace$mode) && grepl("markers", trace$mode)) ||
+        (!is.null(trace$type) && trace$type == "scatter" && !is.null(trace$marker))
+      }))
+      if (length(point_indices) > 0) point_indices <- traces_to_check[point_indices]
+      
+      polygon_indices <- which(sapply(traces_to_check, function(idx) {
+        trace <- plotly_plot$x$data[[idx]]
+        # Polygons typically have fill or are paths without markers
+        (!is.null(trace$fill) && trace$fill != "none") ||
+        (!is.null(trace$mode) && trace$mode == "lines" && is.null(trace$marker))
+      }))
+      if (length(polygon_indices) > 0) polygon_indices <- traces_to_check[polygon_indices]
+      
+      # Reorder: invisible grid (if exists), polygons, other traces, then points on top
+      if (length(point_indices) > 0 && length(polygon_indices) > 0) {
+        base_traces <- if (!is.null(pca_model)) list(plotly_plot$x$data[[1]]) else list()
+        other_indices <- setdiff(traces_to_check, c(point_indices, polygon_indices))
+        new_order <- c(
+          if (!is.null(pca_model)) 1 else NULL,  # Invisible grid stays first
+          polygon_indices, 
+          other_indices, 
+          point_indices
+        )
+        plotly_plot$x$data <- plotly_plot$x$data[new_order]
+      }
+    }
+    
+    # Configure for better interaction and styling
+    plotly_plot <- plotly::layout(
+      plotly_plot,
+      hovermode = "closest",
+      dragmode = "pan",
+      # Minimal axis styling - no labels, no ticks, no grid
+      xaxis = list(
+        title = "",
+        showgrid = FALSE,
+        zeroline = TRUE,
+        zerolinecolor = "rgba(0,0,0,0.5)",
+        showline = FALSE,
+        mirror = FALSE,
+        ticks = "",
+        showticklabels = FALSE
+      ),
+      yaxis = list(
+        title = "",
+        showgrid = FALSE,
+        zeroline = TRUE,
+        zerolinecolor = "rgba(0,0,0,0.5)",
+        showline = FALSE,
+        mirror = FALSE,
+        ticks = "",
+        showticklabels = FALSE
+      ),
+      # Set plot background
+      plot_bgcolor = "white",
+      paper_bgcolor = "white"
+    )
+    
+    # Attach PCA model if provided (for Shiny use)
+    if (!is.null(pca_model)) {
+      attr(plotly_plot, "pca_model") <- pca_model
+      if (verbose) {
+        message("PCA model attached for interactive reconstruction")
+      }
+    }
+    
+    return(plotly_plot)
   }
   
   return(plot)
