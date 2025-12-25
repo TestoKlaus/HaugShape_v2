@@ -161,6 +161,11 @@ plotting_ui <- function(id) {
           conditionalPanel(
             condition = sprintf("input['%s'] == true", ns("interactive_mode")),
             helpText("💡 PCA model will be auto-loaded if reconstruction CSV files are found alongside your data."),
+            hr(),
+            tags$strong("Manual PCA Model Selection:"),
+            uiOutput(ns("pca_model_file_ui")),
+            actionButton(ns("load_pca_model_btn"), "Load PCA Model", class = "btn-primary"),
+            hr(),
             uiOutput(ns("pca_model_status")),
             hr(),
             numericInput(ns("shape_preview_size"), "Preview shape size (pixels)", value = 400, min = 200, max = 800, step = 50)
@@ -171,6 +176,10 @@ plotting_ui <- function(id) {
         ),
         conditionalPanel(
           condition = sprintf("input['%s'] == true", ns("interactive_mode")),
+          div(style = "margin: 10px 0;",
+              actionButton(ns("open_interactive_window"), "Open Interactive Plot in New Window", 
+                          class = "btn-info btn-lg", icon = icon("external-link-alt"))
+          ),
           box(
             title = "Interactive Plot",
             status = "info",
@@ -253,8 +262,129 @@ plotting_server <- function(id, data_reactive) {
     data_file_path <- reactiveVal(NULL)
     hover_shape_coords <- reactiveVal(NULL)
     hover_point_info <- reactiveVal(NULL)
+    pca_model_file_path <- reactiveVal("")
     
-    # Try to load PCA model when data changes
+    # Check for shinyFiles availability
+    shinyfiles_ready <- reactiveVal(FALSE)
+    observe({
+      ready <- requireNamespace("shinyFiles", quietly = TRUE)
+      if (!isTRUE(ready)) {
+        try(install.packages("shinyFiles", repos = "https://cran.r-project.org", quiet = TRUE), silent = TRUE)
+        ready <- requireNamespace("shinyFiles", quietly = TRUE)
+      }
+      shinyfiles_ready(isTRUE(ready))
+    })
+    
+    # PCA model file chooser UI
+    output$pca_model_file_ui <- renderUI({
+      if (isTRUE(shinyfiles_ready())) {
+        tagList(
+          shinyFiles::shinyFilesButton(
+            ns("pca_model_file_btn"), 
+            label = "Choose PCA model file", 
+            title = "Select CSV file (*_pca_rotation.csv, *_pca_center.csv, or *_pca_sdev.csv)",
+            multiple = FALSE
+          ),
+          br(), br(),
+          strong("Selected file: "), 
+          textOutput(ns("pca_model_file_selected"), inline = TRUE)
+        )
+      } else {
+        tagList(
+          textInput(ns("pca_model_file_fallback"), "PCA model file path (.csv)", value = ""),
+          helpText("Enter the full path to any of the PCA model CSV files (*_pca_rotation.csv, *_pca_center.csv, or *_pca_sdev.csv)")
+        )
+      }
+    })
+    
+    # Setup file chooser for PCA model
+    observeEvent(shinyfiles_ready(), {
+      if (!isTRUE(shinyfiles_ready())) return()
+      
+      roots <- try(shinyFiles::getVolumes()(), silent = TRUE)
+      if (inherits(roots, "try-error") || is.null(roots) || length(roots) == 0) {
+        roots <- c()
+      }
+      if (.Platform$OS.type == "windows" && dir.exists("C:/")) {
+        roots <- c(`C:` = "C:/", roots)
+      }
+      roots <- c(roots, Home = normalizePath("~"), `Working Dir` = normalizePath(getwd()))
+      
+      shinyFiles::shinyFileChoose(
+        input, 
+        id = "pca_model_file_btn", 
+        roots = roots, 
+        session = session,
+        filetypes = c("csv", "CSV")
+      )
+    })
+    
+    # Handle PCA model file selection
+    observeEvent(input$pca_model_file_btn, {
+      req(shinyfiles_ready())
+      
+      roots <- try(shinyFiles::getVolumes()(), silent = TRUE)
+      if (inherits(roots, "try-error") || is.null(roots) || length(roots) == 0) {
+        roots <- c()
+      }
+      if (.Platform$OS.type == "windows" && dir.exists("C:/")) {
+        roots <- c(`C:` = "C:/", roots)
+      }
+      roots <- c(roots, Home = normalizePath("~"), `Working Dir` = normalizePath(getwd()))
+      
+      sel <- try(shinyFiles::parseFilePaths(roots, input$pca_model_file_btn), silent = TRUE)
+      if (!inherits(sel, "try-error") && nrow(sel) > 0) {
+        pca_model_file_path(as.character(sel$datapath[1]))
+      }
+    })
+    
+    # Fallback file path for PCA model
+    observe({
+      if (!isTRUE(shinyfiles_ready()) && !is.null(input$pca_model_file_fallback) && nzchar(input$pca_model_file_fallback)) {
+        pca_model_file_path(input$pca_model_file_fallback)
+      }
+    })
+    
+    # Display selected PCA model file
+    output$pca_model_file_selected <- renderText({
+      path <- pca_model_file_path()
+      if (is.null(path) || !nzchar(path)) {
+        return("(No file selected)")
+      }
+      basename(path)
+    })
+    
+    # Load PCA model when button is clicked
+    observeEvent(input$load_pca_model_btn, {
+      path <- pca_model_file_path()
+      
+      if (is.null(path) || !nzchar(path)) {
+        showNotification("Please select a PCA model file first.", type = "warning", duration = 5)
+        return()
+      }
+      
+      if (!file.exists(path)) {
+        showNotification(paste("File not found:", path), type = "error", duration = 5)
+        return()
+      }
+      
+      tryCatch({
+        # Load the model using the file path
+        model <- load_pca_model_for_plotting(path)
+        
+        if (!is.null(model)) {
+          pca_model(model)
+          showNotification("PCA model loaded successfully!", type = "message", duration = 3)
+        } else {
+          showNotification("Failed to load PCA model. Check that CSV files exist in the same directory.", 
+                         type = "error", duration = 5)
+        }
+      }, error = function(e) {
+        showNotification(paste("Error loading PCA model:", e$message), type = "error", duration = 5)
+      })
+    })
+    
+    # Try to load PCA model when data changes (auto-load attempt)
     observe({
       df <- data_reactive()
       req(df)
@@ -974,6 +1104,125 @@ plotting_server <- function(id, data_reactive) {
     })
 
     output$messages <- renderText({ messages() })
+    
+    # Open interactive plot in modal window
+    observeEvent(input$open_interactive_window, {
+      p <- plot_obj()
+      
+      if (is.null(p)) {
+        showNotification("Please render the plot first by clicking 'Render plot'.", 
+                        type = "warning", duration = 5)
+        return()
+      }
+      
+      if (!inherits(p, "plotly")) {
+        showNotification("Interactive mode must be enabled to open in a new window.", 
+                        type = "warning", duration = 5)
+        return()
+      }
+      
+      showModal(modalDialog(
+        title = "Interactive Morphospace Explorer",
+        size = "l",
+        easyClose = TRUE,
+        footer = modalButton("Close"),
+        
+        fluidRow(
+          column(
+            width = 7,
+            tags$div(
+              style = "border: 1px solid #ddd; padding: 10px; border-radius: 4px;",
+              tags$h4("Interactive Plot", style = "margin-top: 0;"),
+              plotly::plotlyOutput(ns("interactive_plot_modal"), height = 600)
+            )
+          ),
+          column(
+            width = 5,
+            tags$div(
+              style = "border: 1px solid #ddd; padding: 10px; border-radius: 4px;",
+              tags$h4("Shape Preview", style = "margin-top: 0;"),
+              helpText("Hover over the plot to see shapes"),
+              plotOutput(ns("shape_preview_modal"), height = 500),
+              tags$hr(),
+              verbatimTextOutput(ns("hover_info_modal"))
+            )
+          )
+        )
+      ))
+    })
+    
+    # Render modal plotly (same as main)
+    output$interactive_plot_modal <- plotly::renderPlotly({
+      p <- plot_obj()
+      req(p)
+      req(inherits(p, "plotly"))
+      p
+    })
+    
+    # Render modal shape preview (same as main)
+    output$shape_preview_modal <- renderPlot({
+      coords <- hover_shape_coords()
+      info <- hover_point_info()
+      
+      if (is.null(coords) || is.null(info)) {
+        plot.new()
+        text(0.5, 0.5, "Hover over the plot to see shapes", cex = 1.2)
+        return()
+      }
+      
+      # Plot the shape
+      par(mar = c(1, 1, 2, 1))
+      plot(coords, type = "l", lwd = 2, asp = 1, 
+           xlab = "", ylab = "", axes = FALSE,
+           main = if (info$type == "data_point") {
+             paste("Shape:", info$id)
+           } else {
+             paste("Reconstructed Shape")
+           })
+      
+      # Add polygon fill
+      polygon(coords, col = "lightblue", border = "darkblue", lwd = 2)
+      
+      # Add grid
+      grid(col = "gray80", lty = "dotted")
+      
+    }, height = 500)
+    
+    # Render modal hover info (same as main)
+    output$hover_info_modal <- renderText({
+      info <- hover_point_info()
+      
+      if (is.null(info)) {
+        return("Hover over the plot to see information")
+      }
+      
+      if (info$type == "data_point") {
+        paste0(
+          "Data Point\n",
+          "ID: ", info$id, "\n",
+          "PC1: ", round(info$pc1, 3), "\n",
+          "PC2: ", round(info$pc2, 3), "\n",
+          if (!is.null(info$shape_coords)) "Source: Original shape from data" else "No shape data available"
+        )
+      } else if (info$type == "reconstructed") {
+        paste0(
+          "Hypothetical Shape (Reconstructed)\n",
+          "PC1: ", round(info$pc1, 3), "\n",
+          "PC2: ", round(info$pc2, 3), "\n",
+          "Other PCs: 0 (at mean)\n",
+          "Source: Real-time reconstruction from PCA model"
+        )
+      } else if (info$type == "no_model") {
+        paste0(
+          "Position: PC1 = ", round(info$pc1, 3), ", PC2 = ", round(info$pc2, 3), "\n",
+          "No PCA model loaded - reconstruction not available"
+        )
+      } else if (info$type == "error") {
+        paste0("Reconstruction error: ", info$message)
+      } else {
+        "Hover over the plot"
+      }
+    })
 
     output$legend_html <- renderUI({
       lg <- legend_info()
