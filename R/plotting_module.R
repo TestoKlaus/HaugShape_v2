@@ -149,18 +149,62 @@ plotting_ui <- function(id) {
           ),
           downloadButton(ns("download_plot"), "Download ggplot (.rds)", class = "btn-primary")
         ),
+        box(
+          title = "Interactive Mode",
+          status = "warning",
+          solidHeader = TRUE,
+          width = 12,
+          collapsible = TRUE,
+          collapsed = TRUE,
+          checkboxInput(ns("interactive_mode"), "Enable Interactive Mode", value = FALSE),
+          helpText("Interactive mode requires plotly. Hover over points to see IDs, hover over morphospace to see reconstructed shapes."),
+          conditionalPanel(
+            condition = sprintf("input['%s'] == true", ns("interactive_mode")),
+            helpText("💡 PCA model will be auto-loaded if reconstruction CSV files are found alongside your data."),
+            uiOutput(ns("pca_model_status")),
+            hr(),
+            numericInput(ns("shape_preview_size"), "Preview shape size (pixels)", value = 400, min = 200, max = 800, step = 50)
+          )
+        ),
         div(style = "margin: 10px 0;",
             actionButton(ns("render"), "Render plot", class = "btn-success btn-lg")
         ),
-        box(
-          title = "Plot",
-          status = "info",
-          solidHeader = TRUE,
-          width = 12,
-          collapsible = FALSE,
-          plotOutput(ns("plot"), height = 600),
-          br(),
-          verbatimTextOutput(ns("messages"))
+        conditionalPanel(
+          condition = sprintf("input['%s'] == true", ns("interactive_mode")),
+          box(
+            title = "Interactive Plot",
+            status = "info",
+            solidHeader = TRUE,
+            width = 12,
+            collapsible = FALSE,
+            plotly::plotlyOutput(ns("interactive_plot"), height = 600),
+            br(),
+            verbatimTextOutput(ns("messages"))
+          ),
+          box(
+            title = "Shape Preview",
+            status = "info",
+            solidHeader = TRUE,
+            width = 12,
+            collapsible = TRUE,
+            collapsed = FALSE,
+            helpText("Hover over the plot to see shapes. Points show actual data, empty space shows reconstructed hypothetical shapes."),
+            plotOutput(ns("shape_preview"), height = "auto"),
+            verbatimTextOutput(ns("hover_info"))
+          )
+        ),
+        conditionalPanel(
+          condition = sprintf("input['%s'] == false", ns("interactive_mode")),
+          box(
+            title = "Plot",
+            status = "info",
+            solidHeader = TRUE,
+            width = 12,
+            collapsible = FALSE,
+            plotOutput(ns("plot"), height = 600),
+            br(),
+            verbatimTextOutput(ns("messages"))
+          )
         )
       ),
       column(
@@ -201,6 +245,65 @@ plotting_server <- function(id, data_reactive) {
         ready <- requireNamespace("colourpicker", quietly = TRUE)
       }
       colourpicker_ready(isTRUE(ready))
+    })
+
+    # Reactive values for interactive mode
+    pca_model <- reactiveVal(NULL)
+    plot_obj <- reactiveVal(NULL)
+    data_file_path <- reactiveVal(NULL)
+    hover_shape_coords <- reactiveVal(NULL)
+    hover_point_info <- reactiveVal(NULL)
+    
+    # Try to load PCA model when data changes
+    observe({
+      df <- data_reactive()
+      req(df)
+      
+      # Check if data frame has attributes that indicate file path
+      file_path <- attr(df, "source_file", exact = TRUE)
+      if (!is.null(file_path)) {
+        data_file_path(file_path)
+        
+        # Auto-load PCA model if interactive mode is enabled
+        if (isTRUE(input$interactive_mode)) {
+          model <- load_pca_model_for_plotting(file_path)
+          pca_model(model)
+        }
+      }
+    })
+    
+    # Load PCA model when interactive mode is toggled on
+    observeEvent(input$interactive_mode, {
+      if (isTRUE(input$interactive_mode)) {
+        file_path <- data_file_path()
+        if (!is.null(file_path)) {
+          model <- load_pca_model_for_plotting(file_path)
+          pca_model(model)
+        }
+      }
+    })
+    
+    # PCA model status display
+    output$pca_model_status <- renderUI({
+      model <- pca_model()
+      if (is.null(model)) {
+        tags$div(
+          style = "padding: 10px; background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 4px;",
+          tags$strong("⚠️ No PCA model loaded"),
+          tags$p("Reconstruction CSV files not found. Interactive mode will show IDs only.", style = "margin: 5px 0 0 0;")
+        )
+      } else {
+        tags$div(
+          style = "padding: 10px; background-color: #d4edda; border: 1px solid #28a745; border-radius: 4px;",
+          tags$strong("✓ PCA model loaded"),
+          tags$ul(
+            style = "margin: 5px 0 0 0;",
+            tags$li("Method: ", model$method),
+            tags$li("Harmonics: ", model$n_harmonics),
+            tags$li("PCs: ", length(model$sdev))
+          )
+        )
+      }
     })
 
     # Dynamic per-group point color/fill/shape pickers
@@ -441,8 +544,7 @@ plotting_server <- function(id, data_reactive) {
       selectInput(ns("shape_groups"), "Shape overlay groups (optional)", choices = vals, selected = vals, multiple = TRUE)
     })
 
-    # Render plot
-    plot_obj <- reactiveVal(NULL)
+    # Render plot - reactive values (plot_obj already declared above)
     messages <- reactiveVal("")
     legend_info <- reactiveVal(NULL)
 
@@ -519,13 +621,6 @@ plotting_server <- function(id, data_reactive) {
       )
 
     # Build features list
-    # Choose single vs list entries for hull/contour colors using pickers if present
-  # Hull single values removed; rely on per-group pickers or defaults
-  hull_fill_single <- NULL
-  hull_color_single <- NULL
-  # No single contour color; rely on per-group pickers or defaults
-  contour_color_single <- NULL
-
       # Collect per-group hull fill colors if provided
       hull_fill_by_group <- NULL
       if (isTRUE(colourpicker_ready()) && !is.null(input$hull_groups) && length(input$hull_groups) > 0) {
@@ -655,6 +750,8 @@ plotting_server <- function(id, data_reactive) {
           features = features,
           labels = labels,
           export_options = list(export = FALSE),
+          interactive = isTRUE(input$interactive_mode),
+          pca_model = if (isTRUE(input$interactive_mode)) pca_model() else NULL,
           verbose = TRUE
         )
       }, error = function(e) {
@@ -728,6 +825,152 @@ plotting_server <- function(id, data_reactive) {
     output$plot <- renderPlot({
       p <- plot_obj(); req(p)
       print(p)
+    })
+    
+    # Render interactive plotly plot
+    output$interactive_plot <- plotly::renderPlotly({
+      p <- plot_obj()
+      req(p)
+      req(inherits(p, "plotly"))
+      p
+    })
+    
+    # Handle hover events for shape reconstruction
+    observeEvent(plotly::event_data("plotly_hover", source = "morphospace"), {
+      hover_data <- plotly::event_data("plotly_hover", source = "morphospace")
+      req(hover_data)
+      
+      # Get hover coordinates
+      pc1 <- hover_data$x
+      pc2 <- hover_data$y
+      point_number <- hover_data$pointNumber
+      
+      # Check if hovering over actual data point or empty space
+      df <- data_reactive()
+      req(df)
+      x_col <- input$x_col
+      y_col <- input$y_col
+      
+      # Find if this matches a data point (with small tolerance)
+      tolerance <- 0.01
+      if (!is.null(point_number) && point_number >= 0 && point_number < nrow(df)) {
+        # Hovering over an actual point - show ID and shape if available
+        point_idx <- point_number + 1  # R is 1-indexed
+        
+        point_id <- if ("ID" %in% names(df)) df$ID[point_idx] else paste("Point", point_idx)
+        point_info <- list(
+          type = "data_point",
+          id = point_id,
+          pc1 = df[[x_col]][point_idx],
+          pc2 = df[[y_col]][point_idx]
+        )
+        
+        # Check if shape column exists
+        if ("shape" %in% names(df) && !is.null(df$shape[[point_idx]])) {
+          # Extract shape coordinates from Out object
+          shape_obj <- df$shape[[point_idx]]
+          if (inherits(shape_obj, "Out") && !is.null(shape_obj$coo) && length(shape_obj$coo) > 0) {
+            point_info$shape_coords <- shape_obj$coo[[1]]
+            point_info$shape_source <- "data"
+          }
+        }
+        
+        hover_point_info(point_info)
+        hover_shape_coords(point_info$shape_coords)
+        
+      } else {
+        # Hovering over empty morphospace - reconstruct hypothetical shape
+        model <- pca_model()
+        
+        if (!is.null(model)) {
+          tryCatch({
+            # Reconstruct shape from hover coordinates
+            coords <- .reconstruct_shape_from_hover(model, pc1, pc2, nb_pts = 120)
+            
+            point_info <- list(
+              type = "reconstructed",
+              pc1 = pc1,
+              pc2 = pc2,
+              shape_source = "reconstruction"
+            )
+            
+            hover_point_info(point_info)
+            hover_shape_coords(coords)
+            
+          }, error = function(e) {
+            hover_point_info(list(type = "error", message = e$message))
+            hover_shape_coords(NULL)
+          })
+        } else {
+          hover_point_info(list(type = "no_model", pc1 = pc1, pc2 = pc2))
+          hover_shape_coords(NULL)
+        }
+      }
+    })
+    
+    # Render shape preview
+    output$shape_preview <- renderPlot({
+      coords <- hover_shape_coords()
+      info <- hover_point_info()
+      
+      if (is.null(coords) || is.null(info)) {
+        plot.new()
+        text(0.5, 0.5, "Hover over the plot to see shapes", cex = 1.2)
+        return()
+      }
+      
+      # Plot the shape
+      par(mar = c(1, 1, 2, 1))
+      plot(coords, type = "l", lwd = 2, asp = 1, 
+           xlab = "", ylab = "", axes = FALSE,
+           main = if (info$type == "data_point") {
+             paste("Shape:", info$id)
+           } else {
+             paste("Reconstructed Shape")
+           })
+      
+      # Add polygon fill
+      polygon(coords, col = "lightblue", border = "darkblue", lwd = 2)
+      
+      # Add grid
+      grid(col = "gray80", lty = "dotted")
+      
+    }, height = function() input$shape_preview_size %||% 400)
+    
+    # Render hover info text
+    output$hover_info <- renderText({
+      info <- hover_point_info()
+      
+      if (is.null(info)) {
+        return("Hover over the plot to see information")
+      }
+      
+      if (info$type == "data_point") {
+        paste0(
+          "Data Point\n",
+          "ID: ", info$id, "\n",
+          "PC1: ", round(info$pc1, 3), "\n",
+          "PC2: ", round(info$pc2, 3), "\n",
+          if (!is.null(info$shape_coords)) "Source: Original shape from data" else "No shape data available"
+        )
+      } else if (info$type == "reconstructed") {
+        paste0(
+          "Hypothetical Shape (Reconstructed)\n",
+          "PC1: ", round(info$pc1, 3), "\n",
+          "PC2: ", round(info$pc2, 3), "\n",
+          "Other PCs: 0 (at mean)\n",
+          "Source: Real-time reconstruction from PCA model"
+        )
+      } else if (info$type == "no_model") {
+        paste0(
+          "Position: PC1 = ", round(info$pc1, 3), ", PC2 = ", round(info$pc2, 3), "\n",
+          "No PCA model loaded - reconstruction not available"
+        )
+      } else if (info$type == "error") {
+        paste0("Reconstruction error: ", info$message)
+      } else {
+        "Hover over the plot"
+      }
     })
 
     output$messages <- renderText({ messages() })

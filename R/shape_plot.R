@@ -15,6 +15,10 @@
 #'   See Details for available options.
 #' @param labels List containing label options (title, axis labels).
 #' @param export_options List containing export options. See Details for available options.
+#' @param interactive Logical indicating whether to enable interactive plotly mode. Default: FALSE.
+#'   When TRUE, returns a plotly object with hover events. Requires plotly package.
+#' @param pca_model Optional PCA model list for interactive reconstruction. Only used when interactive = TRUE.
+#'   If provided, enables real-time shape reconstruction on hover. Can be created with extract_pca_model().
 #' @param verbose Logical indicating whether to print progress messages. Default: TRUE.
 #'
 #' @details
@@ -53,7 +57,12 @@
 #' - SVG: Vector format with base dimensions (scalable without quality loss)
 #' - TIFF/PNG: Raster formats requiring width, height, and DPI specifications
 #'
-#' @return A ggplot2 object representing the scatter plot.
+#' When \code{interactive = TRUE}, the plot is converted to plotly for interactive exploration.
+#' If \code{pca_model} is also provided, hovering over the morphospace will show:
+#' - For data points: ID and existing shape (if available in data)
+#' - For empty space: Reconstructed hypothetical shape at those PC coordinates
+#'
+#' @return A ggplot2 object (default) or plotly object (when interactive = TRUE).
 #'
 #' @examples
 #' # Basic scatter plot
@@ -102,6 +111,8 @@ shape_plot <- function(data,
                       features = list(),
                       labels = list(),
                       export_options = list(),
+                      interactive = FALSE,
+                      pca_model = NULL,
                       verbose = TRUE) {
   
   # Input validation ----
@@ -194,6 +205,53 @@ shape_plot <- function(data,
   # Export if requested ----
   if (params$export_options$export) {
     .export_plot(plot, params$export_options, verbose)
+  }
+  
+  # Convert to interactive plotly if requested ----
+  if (interactive) {
+    if (!requireNamespace("plotly", quietly = TRUE)) {
+      warning("Package 'plotly' is required for interactive mode. Returning static ggplot2 object.")
+      return(plot)
+    }
+    
+    if (verbose) {
+      message("Converting to interactive plotly plot...")
+    }
+    
+    # Create custom hover text with IDs
+    hover_data <- clean_data
+    id_col <- if ("ID" %in% names(hover_data)) "ID" else NULL
+    
+    if (!is.null(id_col)) {
+      hover_text <- paste0(
+        "ID: ", hover_data[[id_col]], "\n",
+        x_col, ": ", round(hover_data[[x_col]], 3), "\n",
+        y_col, ": ", round(hover_data[[y_col]], 3)
+      )
+      
+      # Store hover text in plot data for plotly conversion
+      plot$data$text <- hover_text
+    }
+    
+    # Convert to plotly with event source for Shiny reactivity
+    plotly_plot <- plotly::ggplotly(plot, tooltip = "text", source = "morphospace")
+    
+    # Configure for better interaction
+    plotly_plot <- plotly::layout(
+      plotly_plot,
+      hovermode = "closest",
+      dragmode = "pan"
+    )
+    
+    # Attach PCA model if provided (for Shiny use)
+    if (!is.null(pca_model)) {
+      attr(plotly_plot, "pca_model") <- pca_model
+      if (verbose) {
+        message("PCA model attached for interactive reconstruction")
+      }
+    }
+    
+    return(plotly_plot)
   }
   
   return(plot)
