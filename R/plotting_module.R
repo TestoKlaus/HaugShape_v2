@@ -106,6 +106,74 @@ plotting_ui <- function(id) {
           numericInput(ns("shape_y_adjust"), "Shape y adjust", value = 0, step = 0.01)
         ),
         box(
+          title = "Features - Gap Overlay",
+          status = "primary",
+          solidHeader = TRUE,
+          width = 12,
+          collapsible = TRUE,
+          collapsed = TRUE,
+          checkboxInput(ns("gaps_show"), "Show morphospace gaps", value = FALSE),
+          helpText("Load gap detection results from the Gap Detection module to overlay gap regions."),
+          conditionalPanel(
+            condition = sprintf("input['%s'] == true", ns("gaps_show")),
+            fileInput(
+              ns("gap_results_file"),
+              "Select Gap Results File (.rds)",
+              accept = c(".rds"),
+              placeholder = "No file selected"
+            ),
+            uiOutput(ns("gap_pc_pair_selector")),
+            uiOutput(ns("gap_threshold_selector")),
+            selectInput(
+              ns("gap_display_mode"),
+              "Display Mode",
+              choices = c(
+                "Certainty Heatmap" = "heatmap",
+                "Polygon Outlines" = "polygons",
+                "Both" = "both"
+              ),
+              selected = "both"
+            ),
+            numericInput(
+              ns("gap_alpha"),
+              "Gap Overlay Alpha",
+              value = 0.5,
+              min = 0,
+              max = 1,
+              step = 0.1
+            ),
+            colourpicker::colourInput(
+              ns("gap_low_color"),
+              "Low Certainty Color",
+              value = "#FFFFFF"
+            ),
+            colourpicker::colourInput(
+              ns("gap_mid_color"),
+              "Mid Certainty Color",
+              value = "#FFFF00"
+            ),
+            colourpicker::colourInput(
+              ns("gap_high_color"),
+              "High Certainty Color",
+              value = "#FF0000"
+            ),
+            colourpicker::colourInput(
+              ns("gap_polygon_color"),
+              "Polygon Border Color",
+              value = "#000000"
+            ),
+            numericInput(
+              ns("gap_polygon_width"),
+              "Polygon Border Width",
+              value = 1.2,
+              min = 0.1,
+              max = 5,
+              step = 0.1
+            ),
+            uiOutput(ns("gap_status_ui"))
+          )
+        ),
+        box(
           title = "Labels",
           status = "primary",
           solidHeader = TRUE,
@@ -264,6 +332,9 @@ plotting_server <- function(id, data_reactive) {
     hover_shape_coords <- reactiveVal(NULL)
     hover_point_info <- reactiveVal(NULL)
     pca_model_file_path <- reactiveVal("")
+    
+    # Reactive values for gap overlay
+    gap_results <- reactiveVal(NULL)
     
     # Check for shinyFiles availability
     shinyfiles_ready <- reactiveVal(FALSE)
@@ -432,6 +503,117 @@ plotting_server <- function(id, data_reactive) {
             tags$li("Method: ", model$method),
             tags$li("Harmonics: ", model$n_harmonics),
             tags$li("PCs: ", length(model$sdev))
+          )
+        )
+      }
+    })
+    
+    # Load gap results when file is selected
+    observeEvent(input$gap_results_file, {
+      req(input$gap_results_file)
+      
+      file_path <- input$gap_results_file$datapath
+      
+      tryCatch({
+        results <- readRDS(file_path)
+        
+        # Validate it's a morphospace_gaps object
+        if (!inherits(results, "morphospace_gaps")) {
+          showNotification(
+            "Invalid file format. Please select a gap detection results file (.rds)",
+            type = "error",
+            duration = 5
+          )
+          gap_results(NULL)
+          return()
+        }
+        
+        gap_results(results)
+        
+        showNotification(
+          sprintf("Loaded gap results: %d PC pairs, %d gap regions",
+                 length(results$results), nrow(results$summary_table)),
+          type = "message",
+          duration = 5
+        )
+        
+      }, error = function(e) {
+        showNotification(
+          paste("Error loading gap results:", e$message),
+          type = "error",
+          duration = 8
+        )
+        gap_results(NULL)
+      })
+    })
+    
+    # Gap PC pair selector
+    output$gap_pc_pair_selector <- renderUI({
+      results <- gap_results()
+      req(results)
+      
+      pair_names <- names(results$results)
+      
+      # Try to match current x and y columns
+      x_col <- input$x_col
+      y_col <- input$y_col
+      default_pair <- pair_names[1]
+      
+      if (!is.null(x_col) && !is.null(y_col)) {
+        # Extract PC numbers from column names
+        x_pc <- sub("PC", "", x_col)
+        y_pc <- sub("PC", "", y_col)
+        
+        # Try to find matching pair
+        match_pair <- sprintf("PC%s-PC%s", x_pc, y_pc)
+        if (match_pair %in% pair_names) {
+          default_pair <- match_pair
+        }
+      }
+      
+      selectInput(
+        ns("gap_pc_pair"),
+        "Gap PC Pair",
+        choices = pair_names,
+        selected = default_pair
+      )
+    })
+    
+    # Gap threshold selector
+    output$gap_threshold_selector <- renderUI({
+      results <- gap_results()
+      req(results)
+      
+      thresholds <- results$parameters$certainty_thresholds
+      
+      selectInput(
+        ns("gap_threshold"),
+        "Certainty Threshold",
+        choices = thresholds,
+        selected = thresholds[length(thresholds)]
+      )
+    })
+    
+    # Gap status UI
+    output$gap_status_ui <- renderUI({
+      results <- gap_results()
+      
+      if (is.null(results)) {
+        tags$div(
+          style = "padding: 10px; background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; margin-top: 10px;",
+          tags$strong("⚠️ No gap results loaded"),
+          tags$p("Please select a gap detection results file (.rds)", style = "margin: 5px 0 0 0;")
+        )
+      } else {
+        tags$div(
+          style = "padding: 10px; background-color: #d4edda; border: 1px solid #28a745; border-radius: 4px; margin-top: 10px;",
+          tags$strong("✓ Gap results loaded"),
+          tags$ul(
+            style = "margin: 5px 0 0 0;",
+            tags$li("PC Pairs: ", length(results$results)),
+            tags$li("Gap Regions: ", nrow(results$summary_table)),
+            tags$li("Grid Resolution: ", results$parameters$grid_resolution),
+            tags$li("Uncertainty: ", sprintf("%.1f%%", results$parameters$uncertainty * 100))
           )
         )
       }
@@ -889,6 +1071,31 @@ plotting_server <- function(id, data_reactive) {
         messages(paste0("Error: ", conditionMessage(e)))
         NULL
       })
+      
+      # Add gap overlay if enabled
+      if (!is.null(p) && isTRUE(input$gaps_show)) {
+        results <- gap_results()
+        
+        if (!is.null(results) && !is.null(input$gap_pc_pair) && !is.null(input$gap_threshold)) {
+          tryCatch({
+            p <- .add_gap_overlay_to_plot(
+              plot = p,
+              gap_results = results,
+              pc_pair = input$gap_pc_pair,
+              threshold = as.numeric(input$gap_threshold),
+              display_mode = input$gap_display_mode,
+              alpha = input$gap_alpha,
+              low_color = input$gap_low_color,
+              mid_color = input$gap_mid_color,
+              high_color = input$gap_high_color,
+              polygon_color = input$gap_polygon_color,
+              polygon_width = input$gap_polygon_width
+            )
+          }, error = function(e) {
+            messages(paste0("Gap overlay error: ", conditionMessage(e)))
+          })
+        }
+      }
 
       plot_obj(p)
 
@@ -1351,4 +1558,121 @@ plotting_server <- function(id, data_reactive) {
 
     invisible(list(plot = plot_obj))
   })
+}
+
+#' Add Gap Overlay to Plot
+#'
+#' Internal helper function to add morphospace gap overlay to an existing ggplot
+#'
+#' @param plot ggplot2 object
+#' @param gap_results morphospace_gaps object
+#' @param pc_pair Character, PC pair name (e.g., "PC1-PC2")
+#' @param threshold Numeric, certainty threshold
+#' @param display_mode Character: "heatmap", "polygons", or "both"
+#' @param alpha Numeric, overlay alpha
+#' @param low_color Color for low certainty
+#' @param mid_color Color for mid certainty
+#' @param high_color Color for high certainty
+#' @param polygon_color Color for polygon borders
+#' @param polygon_width Width for polygon borders
+#'
+#' @keywords internal
+.add_gap_overlay_to_plot <- function(plot,
+                                     gap_results,
+                                     pc_pair,
+                                     threshold,
+                                     display_mode = "both",
+                                     alpha = 0.5,
+                                     low_color = "#FFFFFF",
+                                     mid_color = "#FFFF00",
+                                     high_color = "#FF0000",
+                                     polygon_color = "#000000",
+                                     polygon_width = 1.2) {
+  
+  # Extract result for this PC pair
+  pair_result <- gap_results$results[[pc_pair]]
+  
+  if (is.null(pair_result)) {
+    warning(sprintf("No gap results found for PC pair: %s", pc_pair))
+    return(plot)
+  }
+  
+  # Check if plot is plotly (interactive mode)
+  is_plotly <- inherits(plot, "plotly")
+  
+  if (is_plotly) {
+    # For plotly, we need to add traces
+    # This is more complex, so for now we'll skip interactive mode overlay
+    warning("Gap overlay not yet supported in interactive plotly mode")
+    return(plot)
+  }
+  
+  # For ggplot2, add layers
+  if (display_mode %in% c("heatmap", "both")) {
+    # Add heatmap layer
+    gap_certainty <- pair_result$gap_certainty
+    grid_x <- pair_result$grid_x
+    grid_y <- pair_result$grid_y
+    
+    # Create data frame for heatmap
+    gap_df <- expand.grid(x = grid_x, y = grid_y)
+    gap_df$certainty <- as.vector(gap_certainty)
+    
+    # Filter out NA values
+    gap_df <- gap_df[!is.na(gap_df$certainty), ]
+    
+    # Add heatmap layer
+    plot <- plot +
+      ggplot2::geom_raster(
+        data = gap_df,
+        ggplot2::aes(x = x, y = y, fill = certainty),
+        alpha = alpha,
+        inherit.aes = FALSE
+      ) +
+      ggplot2::scale_fill_gradient2(
+        low = low_color,
+        mid = mid_color,
+        high = high_color,
+        midpoint = 0.5,
+        limits = c(0, 1),
+        name = "Gap\nCertainty"
+      )
+  }
+  
+  if (display_mode %in% c("polygons", "both")) {
+    # Add polygon outlines
+    gap_polygons <- pair_result$gap_polygons
+    
+    if (!is.null(gap_polygons) && nrow(gap_polygons) > 0) {
+      # Filter to selected threshold
+      gap_at_threshold <- gap_polygons[gap_polygons$threshold == threshold, ]
+      
+      if (nrow(gap_at_threshold) > 0) {
+        # Convert sf to data frame for ggplot
+        gap_coords_list <- lapply(seq_len(nrow(gap_at_threshold)), function(i) {
+          coords <- sf::st_coordinates(gap_at_threshold[i, ])
+          data.frame(
+            x = coords[, 1],
+            y = coords[, 2],
+            group = i
+          )
+        })
+        
+        gap_coords <- do.call(rbind, gap_coords_list)
+        
+        # Add polygon layer
+        plot <- plot +
+          ggplot2::geom_polygon(
+            data = gap_coords,
+            ggplot2::aes(x = x, y = y, group = group),
+            fill = NA,
+            color = polygon_color,
+            size = polygon_width,
+            inherit.aes = FALSE
+          )
+      }
+    }
+  }
+  
+  return(plot)
 }
