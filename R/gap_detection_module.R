@@ -5,7 +5,7 @@
 #' @import shiny
 #' @import shinydashboard
 #' @importFrom shinyWidgets pickerInput
-#' @importFrom shinyFiles shinyDirButton shinyFilesButton
+#' @importFrom shinyFiles shinyDirButton shinyDirChoose parseDirPath
 #'
 #' @export
 
@@ -230,6 +230,46 @@ gap_detection_ui <- function(id) {
           collapsible = TRUE,
           width = NULL,
           
+          h5("Output Settings"),
+          
+          checkboxInput(
+            ns("auto_save"),
+            "Automatically save results to file",
+            value = TRUE
+          ),
+          
+          conditionalPanel(
+            condition = sprintf("input['%s']", ns("auto_save")),
+            ns = ns,
+            
+            fluidRow(
+              column(
+                width = 9,
+                textInput(
+                  ns("output_folder"),
+                  "Output Folder",
+                  value = getwd(),
+                  placeholder = "Path to save results"
+                )
+              ),
+              column(
+                width = 3,
+                br(),
+                shinyFiles::shinyDirButton(
+                  ns("browse_folder"),
+                  "Browse...",
+                  title = "Select output folder",
+                  icon = icon("folder-open"),
+                  class = "btn-default"
+                )
+              )
+            ),
+            
+            helpText("Results will be saved as: gap_results_YYYYMMDD_HHMMSS.rds")
+          ),
+          
+          hr(),
+          
           actionButton(
             ns("run_analysis"),
             "Detect Gaps",
@@ -263,6 +303,20 @@ gap_detection_ui <- function(id) {
             h4(icon("check-circle"), "Analysis Complete!"),
             
             uiOutput(ns("analysis_summary_ui")),
+            
+            conditionalPanel(
+              condition = sprintf("input['%s']", ns("auto_save")),
+              ns = ns,
+              
+              hr(),
+              
+              div(
+                style = "padding: 10px; background-color: #d4edda; border: 1px solid #28a745; border-radius: 4px;",
+                tags$strong(icon("check"), " Results saved to:"),
+                br(),
+                verbatimTextOutput(ns("saved_file_path"))
+              )
+            ),
             
             br(),
             
@@ -376,8 +430,60 @@ gap_detection_server <- function(id) {
       pca_data = NULL,
       gap_results = NULL,
       analysis_running = FALSE,
-      analysis_complete = FALSE
+      analysis_complete = FALSE,
+      saved_file_path = NULL
     )
+    
+    # Check for shinyFiles availability
+    shinyfiles_ready <- reactiveVal(FALSE)
+    observe({
+      ready <- requireNamespace("shinyFiles", quietly = TRUE)
+      if (!isTRUE(ready)) {
+        try(install.packages("shinyFiles", repos = "https://cran.r-project.org", quiet = TRUE), silent = TRUE)
+        ready <- requireNamespace("shinyFiles", quietly = TRUE)
+      }
+      shinyfiles_ready(isTRUE(ready))
+    })
+    
+    # Setup directory chooser
+    observeEvent(shinyfiles_ready(), {
+      if (!isTRUE(shinyfiles_ready())) return()
+      
+      roots <- try(shinyFiles::getVolumes()(), silent = TRUE)
+      if (inherits(roots, "try-error") || is.null(roots) || length(roots) == 0) {
+        roots <- c()
+      }
+      if (.Platform$OS.type == "windows" && dir.exists("C:/")) {
+        roots <- c(`C:` = "C:/", roots)
+      }
+      roots <- c(roots, Home = normalizePath("~"), `Working Dir` = normalizePath(getwd()))
+      
+      shinyFiles::shinyDirChoose(
+        input,
+        id = "browse_folder",
+        roots = roots,
+        session = session
+      )
+    })
+    
+    # Handle folder selection
+    observeEvent(input$browse_folder, {
+      req(shinyfiles_ready())
+      
+      roots <- try(shinyFiles::getVolumes()(), silent = TRUE)
+      if (inherits(roots, "try-error") || is.null(roots) || length(roots) == 0) {
+        roots <- c()
+      }
+      if (.Platform$OS.type == "windows" && dir.exists("C:/")) {
+        roots <- c(`C:` = "C:/", roots)
+      }
+      roots <- c(roots, Home = normalizePath("~"), `Working Dir` = normalizePath(getwd()))
+      
+      sel <- try(shinyFiles::parseDirPath(roots, input$browse_folder), silent = TRUE)
+      if (!inherits(sel, "try-error") && length(sel) > 0) {
+        updateTextInput(session, "output_folder", value = as.character(sel))
+      }
+    })
     
     # Load PCA data
     observeEvent(input$pca_data_file, {
@@ -525,6 +631,54 @@ gap_detection_server <- function(id) {
           rv$analysis_running <- FALSE
           rv$analysis_complete <- TRUE
           
+          # Auto-save if enabled
+          if (isTRUE(input$auto_save)) {
+            output_folder <- input$output_folder
+            
+            # Validate output folder
+            if (is.null(output_folder) || !nzchar(output_folder)) {
+              output_folder <- getwd()
+            }
+            
+            # Create directory if it doesn't exist
+            if (!dir.exists(output_folder)) {
+              tryCatch({
+                dir.create(output_folder, recursive = TRUE)
+              }, error = function(e) {
+                showNotification(
+                  paste("Could not create output folder:", e$message),
+                  type = "warning",
+                  duration = 5
+                )
+                output_folder <- getwd()
+              })
+            }
+            
+            # Generate filename with timestamp
+            timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+            filename <- sprintf("gap_results_%s.rds", timestamp)
+            filepath <- file.path(output_folder, filename)
+            
+            # Save results
+            tryCatch({
+              saveRDS(results, filepath)
+              rv$saved_file_path <- filepath
+              
+              showNotification(
+                sprintf("Results saved to: %s", basename(filepath)),
+                type = "message",
+                duration = 8
+              )
+            }, error = function(e) {
+              showNotification(
+                paste("Error saving results:", e$message),
+                type = "error",
+                duration = 8
+              )
+              rv$saved_file_path <- NULL
+            })
+          }
+          
           showNotification(
             sprintf("Analysis complete! Detected %d gap regions across %d PC pairs.",
                    nrow(results$summary_table), length(results$results)),
@@ -577,6 +731,14 @@ gap_detection_server <- function(id) {
         p(sprintf("Thresholds: %s", 
                  paste(rv$gap_results$parameters$certainty_thresholds, collapse = ", ")))
       )
+    })
+    
+    # Display saved file path
+    output$saved_file_path <- renderText({
+      if (is.null(rv$saved_file_path)) {
+        return("(Results not saved)")
+      }
+      rv$saved_file_path
     })
     
     # PC pair selector
@@ -672,6 +834,7 @@ gap_detection_server <- function(id) {
       rv$gap_results <- NULL
       rv$analysis_complete <- FALSE
       rv$analysis_running <- FALSE
+      rv$saved_file_path <- NULL
       
       showNotification("Results cleared", type = "message", duration = 3)
     })
