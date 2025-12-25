@@ -1032,11 +1032,6 @@ plotting_server <- function(id, data_reactive) {
         
         if (!is.null(model)) {
           tryCatch({
-            # Debug message
-            if (verbose %||% FALSE) {
-              message("Reconstructing shape at PC1=", round(pc1, 3), ", PC2=", round(pc2, 3))
-            }
-            
             # Reconstruct shape from hover coordinates
             coords <- .reconstruct_shape_from_hover(model, pc1, pc2, nb_pts = 120)
             
