@@ -330,8 +330,11 @@ shape_plot <- function(data,
         zerolinecolor = "rgba(0,0,0,0.5)",
         showline = FALSE,
         mirror = FALSE,
-        ticks = "",
-        showticklabels = TRUE
+        ticks = "outside",
+        ticklen = 5,
+        tickwidth = 1,
+        tickcolor = "black",
+        showticklabels = FALSE
       ),
       yaxis = list(
         title = list(
@@ -343,8 +346,11 @@ shape_plot <- function(data,
         zerolinecolor = "rgba(0,0,0,0.5)",
         showline = FALSE,
         mirror = FALSE,
-        ticks = "",
-        showticklabels = TRUE
+        ticks = "outside",
+        ticklen = 5,
+        tickwidth = 1,
+        tickcolor = "black",
+        showticklabels = FALSE
       ),
       # Set plot background
       plot_bgcolor = "white",
