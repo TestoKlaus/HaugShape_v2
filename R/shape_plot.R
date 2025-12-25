@@ -236,26 +236,80 @@ shape_plot <- function(data,
     # Convert to plotly with event source for Shiny reactivity
     plotly_plot <- plotly::ggplotly(plot, tooltip = "text", source = "morphospace")
     
+    # Add invisible background grid to capture hover events across entire plot area
+    # This allows reconstruction to work everywhere, not just near data points
+    if (!is.null(pca_model)) {
+      # Get plot range from data
+      x_range <- range(clean_data[[x_col]], na.rm = TRUE)
+      y_range <- range(clean_data[[y_col]], na.rm = TRUE)
+      
+      # Expand range slightly
+      x_padding <- diff(x_range) * 0.1
+      y_padding <- diff(y_range) * 0.1
+      x_range <- x_range + c(-x_padding, x_padding)
+      y_range <- y_range + c(-y_padding, y_padding)
+      
+      # Create a grid of invisible points covering the plot area
+      grid_density <- 50  # Points per axis
+      x_grid <- seq(x_range[1], x_range[2], length.out = grid_density)
+      y_grid <- seq(y_range[1], y_range[2], length.out = grid_density)
+      grid_points <- expand.grid(x = x_grid, y = y_grid)
+      
+      # Add invisible trace at the beginning (will be rendered first, below everything)
+      invisible_trace <- list(
+        x = grid_points$x,
+        y = grid_points$y,
+        type = "scatter",
+        mode = "markers",
+        marker = list(
+          size = 8,
+          opacity = 0,  # Completely invisible
+          color = "rgba(0,0,0,0)"
+        ),
+        hoverinfo = "x+y",
+        hovertemplate = paste0(x_col, ": %{x:.3f}<br>", y_col, ": %{y:.3f}<extra></extra>"),
+        showlegend = FALSE,
+        name = "morphospace"
+      )
+      
+      # Insert at beginning so it's rendered first (bottom layer)
+      plotly_plot$x$data <- c(list(invisible_trace), plotly_plot$x$data)
+    }
+    
     # Reorder traces to ensure points are on top of hulls/polygons
     # This is crucial for hover events to work correctly on data points
     if (length(plotly_plot$x$data) > 1) {
+      # Skip the first trace if it's our invisible background grid
+      start_idx <- if (!is.null(pca_model)) 2 else 1
+      traces_to_check <- seq(start_idx, length(plotly_plot$x$data))
+      
       # Identify point traces vs polygon/fill traces
-      point_indices <- which(sapply(plotly_plot$x$data, function(trace) {
+      point_indices <- which(sapply(traces_to_check, function(idx) {
+        trace <- plotly_plot$x$data[[idx]]
         # Points have mode="markers" or type="scatter" with markers
         (!is.null(trace$mode) && grepl("markers", trace$mode)) ||
         (!is.null(trace$type) && trace$type == "scatter" && !is.null(trace$marker))
       }))
+      if (length(point_indices) > 0) point_indices <- traces_to_check[point_indices]
       
-      polygon_indices <- which(sapply(plotly_plot$x$data, function(trace) {
+      polygon_indices <- which(sapply(traces_to_check, function(idx) {
+        trace <- plotly_plot$x$data[[idx]]
         # Polygons typically have fill or are paths without markers
         (!is.null(trace$fill) && trace$fill != "none") ||
         (!is.null(trace$mode) && trace$mode == "lines" && is.null(trace$marker))
       }))
+      if (length(polygon_indices) > 0) polygon_indices <- traces_to_check[polygon_indices]
       
-      # Reorder: polygons first, then points on top
+      # Reorder: invisible grid (if exists), polygons, other traces, then points on top
       if (length(point_indices) > 0 && length(polygon_indices) > 0) {
-        other_indices <- setdiff(seq_along(plotly_plot$x$data), c(point_indices, polygon_indices))
-        new_order <- c(polygon_indices, other_indices, point_indices)
+        base_traces <- if (!is.null(pca_model)) list(plotly_plot$x$data[[1]]) else list()
+        other_indices <- setdiff(traces_to_check, c(point_indices, polygon_indices))
+        new_order <- c(
+          if (!is.null(pca_model)) 1 else NULL,  # Invisible grid stays first
+          polygon_indices, 
+          other_indices, 
+          point_indices
+        )
         plotly_plot$x$data <- plotly_plot$x$data[new_order]
       }
     }

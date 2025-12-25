@@ -975,19 +975,36 @@ plotting_server <- function(id, data_reactive) {
       pc1 <- hover_data$x
       pc2 <- hover_data$y
       point_number <- hover_data$pointNumber
+      curve_number <- hover_data$curveNumber
       
       # Check if hovering over actual data point or empty space
+      # plotly returns curveNumber for the trace - we need to identify if it's a point trace
       df <- data_reactive()
       req(df)
       x_col <- input$x_col
       y_col <- input$y_col
       
-      # Find if this matches a data point (with small tolerance)
-      tolerance <- 0.01
-      if (!is.null(point_number) && point_number >= 0 && point_number < nrow(df)) {
-        # Hovering over an actual point - show ID and shape if available
-        point_idx <- point_number + 1  # R is 1-indexed
+      # Determine if this is a hover over an actual data point
+      # We check if the hover event has a valid pointNumber AND if the coordinates
+      # match an actual data point within tolerance
+      is_data_point <- FALSE
+      point_idx <- NULL
+      
+      if (!is.null(point_number) && !is.null(pc1) && !is.null(pc2)) {
+        # Check if coordinates match any data point
+        tolerance <- 0.001  # Very small tolerance for exact matches
+        x_matches <- abs(df[[x_col]] - pc1) < tolerance
+        y_matches <- abs(df[[y_col]] - pc2) < tolerance
+        matches <- which(x_matches & y_matches)
         
+        if (length(matches) > 0) {
+          is_data_point <- TRUE
+          point_idx <- matches[1]
+        }
+      }
+      
+      if (is_data_point && !is.null(point_idx)) {
+        # Hovering over an actual point - show ID and shape if available
         point_id <- if ("ID" %in% names(df)) df$ID[point_idx] else paste("Point", point_idx)
         point_info <- list(
           type = "data_point",
@@ -1015,6 +1032,11 @@ plotting_server <- function(id, data_reactive) {
         
         if (!is.null(model)) {
           tryCatch({
+            # Debug message
+            if (verbose %||% FALSE) {
+              message("Reconstructing shape at PC1=", round(pc1, 3), ", PC2=", round(pc2, 3))
+            }
+            
             # Reconstruct shape from hover coordinates
             coords <- .reconstruct_shape_from_hover(model, pc1, pc2, nb_pts = 120)
             
@@ -1029,7 +1051,9 @@ plotting_server <- function(id, data_reactive) {
             hover_shape_coords(coords)
             
           }, error = function(e) {
-            hover_point_info(list(type = "error", message = e$message))
+            # Show error in console for debugging
+            message("Reconstruction error: ", e$message)
+            hover_point_info(list(type = "error", message = e$message, pc1 = pc1, pc2 = pc2))
             hover_shape_coords(NULL)
           })
         } else {
@@ -1098,7 +1122,12 @@ plotting_server <- function(id, data_reactive) {
           "No PCA model loaded - reconstruction not available"
         )
       } else if (info$type == "error") {
-        paste0("Reconstruction error: ", info$message)
+        paste0(
+          "Reconstruction Error\n",
+          "PC1: ", round(info$pc1, 3), "\n",
+          "PC2: ", round(info$pc2, 3), "\n",
+          "Error: ", info$message
+        )
       } else {
         "Hover over the plot"
       }
@@ -1122,28 +1151,50 @@ plotting_server <- function(id, data_reactive) {
         return()
       }
       
+      # Calculate dynamic heights based on window size
+      plot_height <- "calc(100vh - 200px)"  # Full viewport height minus header/footer
+      preview_height <- "calc(100vh - 300px)"  # Slightly less for text elements
+      
       showModal(modalDialog(
         title = "Interactive Morphospace Explorer",
         size = "l",
         easyClose = TRUE,
         footer = modalButton("Close"),
         
+        # Add custom CSS for full-screen modal
+        tags$head(tags$style(HTML("
+          .modal-dialog {
+            width: 95vw !important;
+            max-width: 95vw !important;
+            height: 95vh !important;
+            max-height: 95vh !important;
+            margin: 2.5vh auto !important;
+          }
+          .modal-content {
+            height: 95vh !important;
+          }
+          .modal-body {
+            height: calc(95vh - 120px) !important;
+            overflow-y: auto;
+          }
+        "))),
+        
         fluidRow(
           column(
-            width = 7,
+            width = 8,
             tags$div(
-              style = "border: 1px solid #ddd; padding: 10px; border-radius: 4px;",
+              style = "border: 1px solid #ddd; padding: 10px; border-radius: 4px; height: 100%;",
               tags$h4("Interactive Plot", style = "margin-top: 0;"),
-              plotly::plotlyOutput(ns("interactive_plot_modal"), height = 600)
+              plotly::plotlyOutput(ns("interactive_plot_modal"), height = plot_height)
             )
           ),
           column(
-            width = 5,
+            width = 4,
             tags$div(
-              style = "border: 1px solid #ddd; padding: 10px; border-radius: 4px;",
+              style = "border: 1px solid #ddd; padding: 10px; border-radius: 4px; height: 100%;",
               tags$h4("Shape Preview", style = "margin-top: 0;"),
               helpText("Hover over the plot to see shapes"),
-              plotOutput(ns("shape_preview_modal"), height = 500),
+              plotOutput(ns("shape_preview_modal"), height = preview_height),
               tags$hr(),
               verbatimTextOutput(ns("hover_info_modal"))
             )
@@ -1187,7 +1238,7 @@ plotting_server <- function(id, data_reactive) {
       # Add grid
       grid(col = "gray80", lty = "dotted")
       
-    }, height = 500)
+    })
     
     # Render modal hover info (same as main)
     output$hover_info_modal <- renderText({
@@ -1219,7 +1270,12 @@ plotting_server <- function(id, data_reactive) {
           "No PCA model loaded - reconstruction not available"
         )
       } else if (info$type == "error") {
-        paste0("Reconstruction error: ", info$message)
+        paste0(
+          "Reconstruction Error\n",
+          "PC1: ", round(info$pc1, 3), "\n",
+          "PC2: ", round(info$pc2, 3), "\n",
+          "Error: ", info$message
+        )
       } else {
         "Hover over the plot"
       }
