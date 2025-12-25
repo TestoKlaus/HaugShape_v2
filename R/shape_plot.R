@@ -325,34 +325,26 @@ shape_plot <- function(data,
           text = if (!is.null(plot$labels$x)) plot$labels$x else x_col,
           font = list(size = 14, family = "sans-serif")
         ),
-        showgrid = TRUE,
-        gridcolor = "rgba(200,200,200,0.3)",
+        showgrid = FALSE,
         zeroline = TRUE,
         zerolinecolor = "rgba(0,0,0,0.5)",
-        showline = TRUE,
-        linecolor = "black",
+        showline = FALSE,
         mirror = FALSE,
-        ticks = "outside",
-        ticklen = 5,
-        tickwidth = 1,
-        tickcolor = "black"
+        ticks = "",
+        showticklabels = TRUE
       ),
       yaxis = list(
         title = list(
           text = if (!is.null(plot$labels$y)) plot$labels$y else y_col,
           font = list(size = 14, family = "sans-serif")
         ),
-        showgrid = TRUE,
-        gridcolor = "rgba(200,200,200,0.3)",
+        showgrid = FALSE,
         zeroline = TRUE,
         zerolinecolor = "rgba(0,0,0,0.5)",
-        showline = TRUE,
-        linecolor = "black",
+        showline = FALSE,
         mirror = FALSE,
-        ticks = "outside",
-        ticklen = 5,
-        tickwidth = 1,
-        tickcolor = "black"
+        ticks = "",
+        showticklabels = TRUE
       ),
       # Set plot background
       plot_bgcolor = "white",
