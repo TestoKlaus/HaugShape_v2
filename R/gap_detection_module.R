@@ -537,7 +537,7 @@ gap_detection_server <- function(id) {
           column(
             width = 9,
             textInput(
-              ns("output_folder"),
+              session$ns("output_folder"),
               "Output Folder",
               value = getwd(),
               placeholder = "Path to save results"
@@ -548,7 +548,7 @@ gap_detection_server <- function(id) {
             br(),
             if (isTRUE(shinyfiles_ready())) {
               shinyFiles::shinyDirButton(
-                ns("browse_folder"),
+                session$ns("browse_folder"),
                 "Browse...",
                 title = "Select output folder",
                 icon = icon("folder-open"),
@@ -556,7 +556,7 @@ gap_detection_server <- function(id) {
               )
             } else {
               actionButton(
-                ns("browse_folder_disabled"),
+                session$ns("browse_folder_disabled"),
                 "Browse...",
                 icon = icon("folder-open"),
                 class = "btn-default",
