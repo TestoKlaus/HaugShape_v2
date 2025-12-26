@@ -636,9 +636,23 @@ gap_detection_server <- function(id, pca_data = NULL) {
       # Run analysis with progress
       withProgress(message = "Detecting gaps in morphospace...", value = 0, {
         
-        incProgress(0.1, detail = "Initializing...")
+        incProgress(0.05, detail = "Validating data and parameters...")
         
         tryCatch({
+          
+          # Calculate progress increments based on PC pairs
+          pc_cols <- grep("^PC[0-9]+$", colnames(rv$pca_data), value = TRUE)
+          max_pc <- min(input$max_pcs, length(pc_cols))
+          n_pairs <- choose(max_pc, 2)
+          
+          # Create a custom progress callback function
+          progress_fn <- function(msg, increment) {
+            if (increment > 0) {
+              incProgress(increment, detail = msg)
+            } else {
+              setProgress(value = NULL, detail = msg)
+            }
+          }
           
           results <- detect_morphospace_gaps(
             pca_scores = rv$pca_data,
@@ -655,10 +669,9 @@ gap_detection_server <- function(id, pca_data = NULL) {
             occupancy_radius = input$occupancy_radius,
             use_parallel = input$use_parallel,
             n_cores = n_cores,
+            progress_callback = progress_fn,
             verbose = TRUE
           )
-          
-          incProgress(0.9, detail = "Finalizing...")
           
           rv$gap_results <- results
           rv$analysis_running <- FALSE

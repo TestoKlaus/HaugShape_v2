@@ -43,6 +43,8 @@ utils::globalVariables(c("x", "y", "certainty", "group"))
 #'   default: "radius").
 #' @param occupancy_radius Numeric. Radius for occupancy detection as
 #'   proportion of grid cell size (default: 1.5).
+#' @param progress_callback Optional function to call for progress updates.
+#'   Should accept two arguments: message (character) and increment (numeric 0-1).
 #' @param verbose Logical. Print progress messages (default: TRUE).
 #'
 #' @return A list of class "morphospace_gaps" containing:
@@ -122,6 +124,7 @@ detect_morphospace_gaps <- function(pca_scores,
                                     uncertainty_type = "gaussian",
                                     occupancy_method = "radius",
                                     occupancy_radius = 1.5,
+                                    progress_callback = NULL,
                                     verbose = TRUE) {
   
   # Validate inputs
@@ -165,6 +168,10 @@ detect_morphospace_gaps <- function(pca_scores,
     if (verbose) {
       cat(sprintf("Analyzing %d PC pairs (PC1 to PC%d)\n", 
                   nrow(pc_pairs), max_pcs))
+    }
+    
+    if (!is.null(progress_callback)) {
+      progress_callback(sprintf("Analyzing %d PC pairs...", nrow(pc_pairs)), 0)
     }
   } else {
     # Validate provided pairs
@@ -230,10 +237,22 @@ detect_morphospace_gaps <- function(pca_scores,
       cat(sprintf("\n=== Analyzing %s (%d/%d) ===\n", 
                   pair_name, i, nrow(pc_pairs)))
     }
-    
-    # Extract PC scores for this pair
-    col_x <- sprintf("PC%d", pc_x)
-    col_y <- sprintf("PC%d", pc_y)
+      
+    if (!is.null(progress_callback)) {
+      progress_callback(
+        sprintf("PC%d-PC%d (%d/%d): Monte Carlo + Bootstrap", 
+                pc_x, pc_y, i, nrow(pc_pairs)),
+        0.8 / nrow(pc_pairs)
+      )
+    }
+      
+      if (!is.null(progress_callback)) {
+        progress_callback(
+          sprintf("PC%d-PC%d (%d/%d): Monte Carlo + Bootstrap", 
+                  pcx, pcy, i, nrow(pc_pairs)),
+          0.8 / nrow(pc_pairs)
+        )
+      }
     
     if (!col_x %in% colnames(pca_scores) || !col_y %in% colnames(pca_scores)) {
       warning(sprintf("Columns %s or %s not found. Skipping %s", 
@@ -305,6 +324,10 @@ detect_morphospace_gaps <- function(pca_scores,
     cat("\n=== Gap Detection Complete ===\n")
     cat(sprintf("Analyzed %d PC pairs\n", length(results)))
     cat(sprintf("Detected %d gap regions\n", nrow(summary_table)))
+  }
+  
+  if (!is.null(progress_callback)) {
+    progress_callback("Analysis complete!", 0.05)
   }
   
   return(output)
