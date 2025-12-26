@@ -382,7 +382,16 @@ gap_detection_ui <- function(id) {
 #' @importFrom DT renderDataTable datatable
 #'
 #' @export
-gap_detection_server <- function(id) {
+#' Gap Detection Module Server
+#'
+#' @param id Module namespace ID
+#' @param pca_data Optional reactive containing PCA scores data frame. If provided,
+#'   this data will be used instead of requiring file upload.
+#'
+#' @import shiny
+#'
+#' @export
+gap_detection_server <- function(id, pca_data = NULL) {
   moduleServer(id, function(input, output, session) {
     
     # Reactive values
@@ -445,7 +454,7 @@ gap_detection_server <- function(id) {
       }
     })
     
-    # Load PCA data
+    # Load PCA data from file OR use provided reactive data
     observeEvent(input$pca_data_file, {
       req(input$pca_data_file)
       
@@ -483,12 +492,42 @@ gap_detection_server <- function(id) {
         }
         
         showNotification(
-          sprintf("Loaded %d specimens with %d PCs", 
+          sprintf("Loaded %d specimens with %d PCs from file", 
                   nrow(rv$pca_data), length(pc_cols)),
           type = "message",
           duration = 5
         )
         
+      }, error = function(e) {
+        showNotification(
+          paste("Error loading file:", conditionMessage(e)),
+          type = "error",
+          duration = 8
+        )
+        rv$pca_data <- NULL
+      })
+    })
+    
+    # If external PCA data is provided via reactive, use it
+    observe({
+      if (!is.null(pca_data) && is.reactive(pca_data)) {
+        external_data <- pca_data()
+        if (!is.null(external_data)) {
+          # Validate external data
+          pc_cols <- grep("^PC[0-9]+$", colnames(external_data), value = TRUE)
+          
+          if (length(pc_cols) >= 2) {
+            rv$pca_data <- external_data
+            showNotification(
+              sprintf("Using PCA scores from Shape Analysis: %d specimens with %d PCs", 
+                      nrow(external_data), length(pc_cols)),
+              type = "message",
+              duration = 5
+            )
+          }
+        }
+      }
+    })
       }, error = function(e) {
         showNotification(
           paste("Error loading file:", e$message),

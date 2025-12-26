@@ -24,8 +24,7 @@ ui <- dashboardPage(
         menuSubItem("Reconstruct Shapes", tabName = "reconstruct")
       ),
       menuItem("3. Data Import", tabName = "import", icon = icon("upload")),
-      menuItem("4. Plotting", tabName = "plotting", icon = icon("chart-line")),
-      menuItem("5. Gap Detection", tabName = "gap_detection", icon = icon("crosshairs"))
+      menuItem("4. Plotting", tabName = "plotting", icon = icon("chart-line"))
     )
   ),
   
@@ -56,11 +55,6 @@ ui <- dashboardPage(
       # Plotting Tab
       tabItem(tabName = "plotting",
         plotting_ui("plotting")
-      ),
-      
-      # Gap Detection Tab
-      tabItem(tabName = "gap_detection",
-        gap_detection_ui("gap_det")
       )
       
     )
@@ -91,9 +85,6 @@ server <- function(input, output, session) {
 
   # Initialize plotting module (uses data from Data Import)
   plotting_server("plotting", data_reactive = imported$data)
-  
-  # Initialize gap detection module
-  gap_detection_server("gap_det")
 }
 
 # Run the application

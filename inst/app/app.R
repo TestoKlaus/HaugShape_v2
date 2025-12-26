@@ -23,7 +23,6 @@ ui <- dashboardPage(
       ),
       menuItem("4. Data Import",      tabName = "data_import",      icon = icon("table")),
       menuItem("5. Plotting",         tabName = "plotting",         icon = icon("chart-line")),
-      menuItem("5.5 Gap Detection",   tabName = "gap_detection",   icon = icon("crosshairs")),
       menuItem("6. Overview",         tabName = "overview",         icon = icon("th-large"))
     )
   ),
@@ -36,7 +35,6 @@ ui <- dashboardPage(
   tabItem(tabName = "shape_reconstruction", HaugShapeV2::shape_reconstruction_ui("sr")),
   tabItem(tabName = "data_import",      HaugShapeV2::data_import_ui("di")),
   tabItem(tabName = "plotting",         HaugShapeV2::plotting_ui("pl")),
-  tabItem(tabName = "gap_detection",    HaugShapeV2::gap_detection_ui("gd")),
   tabItem(tabName = "overview",         HaugShapeV2::overview_ui("ov"))
     )
   )
@@ -53,7 +51,6 @@ server <- function(input, output, session) {
   # Data Import provides data for plotting
   imported <- HaugShapeV2::data_import_server("di")  # list with $data reactive
   HaugShapeV2::plotting_server("pl", data_reactive = imported$data)
-  HaugShapeV2::gap_detection_server("gd")
   HaugShapeV2::overview_server("ov", data_reactive = imported$data)
 }
 

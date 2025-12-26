@@ -46,6 +46,21 @@ shape_analysis_ui <- function(id) {
           tags$pre(style = "max-height: 320px; overflow-y: auto;", textOutput(ns("summary")))
         )
       )
+    ),
+    fluidRow(
+      column(
+        width = 12,
+        box(
+          title = "Gap Detection Analysis",
+          status = "warning",
+          solidHeader = TRUE,
+          width = 12,
+          collapsible = TRUE,
+          collapsed = TRUE,
+          helpText("Detect morphospace gaps with uncertainty quantification. Requires PCA scores from shape analysis above."),
+          gap_detection_ui(ns("gap_det"))
+        )
+      )
     )
   )
 }
@@ -232,6 +247,18 @@ shape_analysis_server <- function(id) {
         PCcontrib(res$pca_results, nax = 1:max_pcs, sd.r = c(-2,-1,0,1,2))
       }
     })
+    
+    # Initialize gap detection module with PCA scores from shape analysis
+    pca_scores_reactive <- reactive({
+      res <- results()
+      if (is.null(res)) return(NULL)
+      if (!is.null(res$pca_results) && !is.null(res$pca_results$x)) {
+        return(as.data.frame(res$pca_results$x))
+      }
+      return(NULL)
+    })
+    
+    gap_detection_server("gap_det", pca_data = pca_scores_reactive)
 
     invisible(results)
   })
