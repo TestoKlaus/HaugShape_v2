@@ -245,14 +245,6 @@ detect_morphospace_gaps <- function(pca_scores,
         0.8 / nrow(pc_pairs)
       )
     }
-      
-      if (!is.null(progress_callback)) {
-        progress_callback(
-          sprintf("PC%d-PC%d (%d/%d): Monte Carlo + Bootstrap", 
-                  pcx, pcy, i, nrow(pc_pairs)),
-          0.8 / nrow(pc_pairs)
-        )
-      }
     
     if (!col_x %in% colnames(pca_scores) || !col_y %in% colnames(pca_scores)) {
       warning(sprintf("Columns %s or %s not found. Skipping %s", 
