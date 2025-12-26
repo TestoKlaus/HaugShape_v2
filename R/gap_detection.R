@@ -47,12 +47,12 @@ utils::globalVariables(c("x", "y", "certainty", "group"))
 #' @param verbose Logical. Print progress messages (default: TRUE).
 #'
 #' @return A list of class "morphospace_gaps" containing:
-#'   \describe{
-#'     \item{pc_pairs}{Matrix of analyzed PC pairs}
-#'     \item{results}{List with one element per PC pair, each containing: grid_x (x-axis grid coordinates), grid_y (y-axis grid coordinates), gap_probability (matrix of gap probability from measurement uncertainty), gap_stability (matrix of gap stability from sampling uncertainty), gap_certainty (matrix of combined certainty = probability * stability), gap_polygons (sf object with gap polygons at each threshold), gap_metrics (data frame with gap polygon metrics), domain_hull (sf polygon of analysis domain)}
-#'     \item{summary_table}{Data frame summarizing all gaps across PC pairs}
-#'     \item{parameters}{List of analysis parameters}
-#'   }
+#' \describe{
+#' \item{pc_pairs}{Matrix of analyzed PC pairs}
+#' \item{results}{List with one element per PC pair, each containing: grid_x (x-axis grid coordinates), grid_y (y-axis grid coordinates), gap_probability (matrix of gap probability from measurement uncertainty), gap_stability (matrix of gap stability from sampling uncertainty), gap_certainty (matrix of combined certainty = probability * stability), gap_polygons (sf object with gap polygons at each threshold), gap_metrics (data frame with gap polygon metrics), domain_hull (sf polygon of analysis domain)}
+#' \item{summary_table}{Data frame summarizing all gaps across PC pairs}
+#' \item{parameters}{List of analysis parameters}
+#' }
 #'
 #' @details
 #' The function implements a rigorous two-stage uncertainty analysis:
