@@ -19,11 +19,11 @@ ui <- dashboardPage(
       menuItem("2. Morph Shapes",     tabName = "morph_shapes",     icon = icon("wand-magic-sparkles")),
       menuItem("3. Shape Analysis",   tabName = "shape_analysis",   icon = icon("project-diagram"),
         menuSubItem("Run Analysis", tabName = "shape_analysis"),
-        menuSubItem("Reconstruct Shapes", tabName = "shape_reconstruction")
+        menuSubItem("Reconstruct Shapes", tabName = "shape_reconstruction"),
+        menuSubItem("Gap Detection", tabName = "gap_detection")
       ),
       menuItem("4. Data Import",      tabName = "data_import",      icon = icon("table")),
       menuItem("5. Plotting",         tabName = "plotting",         icon = icon("chart-line")),
-      menuItem("5.5 Gap Detection",   tabName = "gap_detection",   icon = icon("crosshairs")),
       menuItem("6. Overview",         tabName = "overview",         icon = icon("th-large"))
     )
   ),

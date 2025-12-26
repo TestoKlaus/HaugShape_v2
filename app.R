@@ -21,11 +21,11 @@ ui <- dashboardPage(
       menuItem("1. Image Processing", tabName = "images", icon = icon("image")),
       menuItem("2. Shape Analysis", tabName = "shape", icon = icon("chart-area"),
         menuSubItem("Run Analysis", tabName = "shape"),
-        menuSubItem("Reconstruct Shapes", tabName = "reconstruct")
+        menuSubItem("Reconstruct Shapes", tabName = "reconstruct"),
+        menuSubItem("Gap Detection", tabName = "gap_detection")
       ),
       menuItem("3. Data Import", tabName = "import", icon = icon("upload")),
-      menuItem("4. Plotting", tabName = "plotting", icon = icon("chart-line")),
-      menuItem("5. Gap Detection", tabName = "gap_detection", icon = icon("crosshairs"))
+      menuItem("4. Plotting", tabName = "plotting", icon = icon("chart-line"))
     )
   ),
   
