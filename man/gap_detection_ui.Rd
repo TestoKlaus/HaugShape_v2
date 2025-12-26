@@ -10,7 +10,5 @@ gap_detection_ui(id)
 \item{id}{Module namespace ID}
 }
 \description{
-UI component for the morphospace gap detection Shiny module.
-Provides controls for loading PCA data, configuring gap detection
-parameters, running analysis, and visualizing results.
+Gap Detection Module UI
 }

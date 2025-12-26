@@ -4,13 +4,14 @@
 \alias{gap_detection_server}
 \title{Gap Detection Module Server}
 \usage{
-gap_detection_server(id)
+gap_detection_server(id, pca_data = NULL)
 }
 \arguments{
 \item{id}{Module namespace ID}
+
+\item{pca_data}{Optional reactive containing PCA scores data frame. If provided,
+this data will be used instead of requiring file upload.}
 }
 \description{
-Server component for the morphospace gap detection Shiny module.
-Handles data loading, parameter configuration, analysis execution,
-and result visualization.
+Gap Detection Module Server
 }

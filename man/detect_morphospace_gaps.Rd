@@ -21,6 +21,7 @@ detect_morphospace_gaps(
   uncertainty_type = "gaussian",
   occupancy_method = "radius",
   occupancy_radius = 1.5,
+  progress_callback = NULL,
   verbose = TRUE
 )
 }
@@ -29,7 +30,7 @@ detect_morphospace_gaps(
 columns named PC1, PC2, PC3, etc.}
 
 \item{uncertainty}{Numeric between 0 and 1. Proportion of axis range to use
-as uncertainty radius (default: 0.05 for 5\% uncertainty).}
+as uncertainty radius (default: 0.05 for 5% uncertainty).}
 
 \item{grid_resolution}{Integer. Number of grid cells along each axis
 (default: 150). Higher values increase precision but slow computation.}
@@ -57,7 +58,7 @@ analyzes all pairs up to max_pcs.}
 auto-determined).}
 
 \item{hull_buffer}{Numeric. Proportional buffer to add around hull
-(default: 0.05 for 5\%).}
+(default: 0.05 for 5%).}
 
 \item{use_parallel}{Logical. Use parallel processing if available
 (default: FALSE).}
@@ -74,6 +75,9 @@ default: "radius").}
 
 \item{occupancy_radius}{Numeric. Radius for occupancy detection as
 proportion of grid cell size (default: 1.5).}
+
+\item{progress_callback}{Optional function to call for progress updates.
+Should accept two arguments: message (character) and increment (numeric 0-1).}
 
 \item{verbose}{Logical. Print progress messages (default: TRUE).}
 }

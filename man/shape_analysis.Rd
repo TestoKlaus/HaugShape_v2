@@ -44,15 +44,14 @@ normalization. Options are "up", "left", "down", or "right". Default is "left".}
 \value{
 A list containing:
   \describe{
-    \item{pca_results}{The PCA object from Momocs}
-    \item{efa_results}{The EFA coefficients object from Momocs}
+    \item{pca_results}{The PCA object}
+    \item{efa_results}{The EFA coefficients object}
     \item{scores}{Data frame of PCA scores}
     \item{summary}{Character string of PCA summary}
     \item{output_path}{Path where Excel results were saved}
     \item{summary_txt_path}{Path to saved PCA summary .txt file}
     \item{pc_plot_jpg_path}{Path to saved PC contributions .jpg}
-    \item{reconstruction_model_path}{Path to RDS file containing reconstruction model}
-    \item{reconstruction_info_path}{Path to text file with reconstruction info}
+    \item{reconstruction_files}{List of paths to reconstruction CSV files (rotation, center, sdev, metadata)}
     \item{metadata}{List of analysis metadata (n_shapes, harmonics, etc.)}
   }
 }
@@ -62,7 +61,7 @@ performs Elliptical Fourier Analysis (EFA) and Principal Component Analysis (PCA
 displays a plot of PC contributions, and saves PCA scores to an Excel file.
 }
 \details{
-The function uses the `Momocs` package to import, normalize, and analyze shape outlines:
+The function uses adapted Momocs code to import, normalize, and analyze shape outlines:
 - **Import**: Reads JPG/JPEG files and converts to shape outlines
 - **Pre-processing**: Centers, scales, and slides shapes to a consistent start
   direction (up/left/down/right)
@@ -77,8 +76,9 @@ specified number of principal components is displayed.
 \section{Dependencies}{
 
 This function requires the following R packages:
-- \pkg{Momocs} for shape analysis
 - \pkg{openxlsx} for writing PCA scores to an Excel file
+
+Shape analysis functions are included from adapted Momocs code (see ATTRIBUTION.md)
 }
 
 \examples{

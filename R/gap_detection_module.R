@@ -1,3 +1,6 @@
+# Suppress R CMD check notes for ggplot2 NSE
+utils::globalVariables(c("x", "y", "certainty", "group"))
+
 #' Gap Detection Module UI
 #'
 #' @param id Module namespace ID
@@ -8,10 +11,6 @@
 #' @importFrom shinyFiles shinyDirButton shinyDirChoose parseDirPath
 #'
 #' @export
-
-# Suppress R CMD check notes for ggplot2 NSE
-utils::globalVariables(c("x", "y", "certainty", "group"))
-
 gap_detection_ui <- function(id) {
   ns <- NS(id)
   
@@ -315,18 +314,11 @@ gap_detection_ui <- function(id) {
 #' Gap Detection Module Server
 #'
 #' @param id Module namespace ID
-#'
-#' @import shiny
-#' @importFrom DT renderDataTable datatable
-#'
-#' @export
-#' Gap Detection Module Server
-#'
-#' @param id Module namespace ID
 #' @param pca_data Optional reactive containing PCA scores data frame. If provided,
 #'   this data will be used instead of requiring file upload.
 #'
 #' @import shiny
+#' @importFrom DT renderDataTable datatable
 #'
 #' @export
 gap_detection_server <- function(id, pca_data = NULL) {

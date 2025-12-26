@@ -1,3 +1,6 @@
+# Suppress R CMD check notes for ggplot2 NSE
+utils::globalVariables(c("x", "y", "certainty", "group"))
+
 #' Detect Morphospace Gaps with Uncertainty Quantification
 #'
 #' Identifies regions of constraint (gaps) in morphospace derived from PCA of
@@ -7,10 +10,6 @@
 #'
 #' @param pca_scores Data frame or matrix containing PC scores. Must have
 #'   columns named PC1, PC2, PC3, etc.
-
-# Suppress R CMD check notes for ggplot2 NSE
-utils::globalVariables(c("x", "y", "certainty", "group"))
-
 #' @param uncertainty Numeric between 0 and 1. Proportion of axis range to use
 #'   as uncertainty radius (default: 0.05 for 5% uncertainty).
 #' @param grid_resolution Integer. Number of grid cells along each axis
