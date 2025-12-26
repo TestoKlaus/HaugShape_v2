@@ -148,29 +148,62 @@ compute_pca_saturation <- function(pca_object,
     iter_results <- vector("list", n_iter)
     
     for (i in 1:n_iter) {
-      # Resample with replacement
-      boot_indices <- sample(1:n_samples, size = sample_size, replace = TRUE)
-      boot_scores <- scores[boot_indices, , drop = FALSE]
-      
-      # Compute metrics
-      iter_results[[i]] <- compute_variance_metrics(boot_scores, metrics)
+      tryCatch({
+        # Resample with replacement
+        boot_indices <- sample(1:n_samples, size = sample_size, replace = TRUE)
+        boot_scores <- scores[boot_indices, , drop = FALSE]
+        
+        # Compute metrics
+        iter_results[[i]] <- compute_variance_metrics(boot_scores, metrics)
+      }, error = function(e) {
+        warning(paste("Error in bootstrap iteration", i, ":", e$message))
+        iter_results[[i]] <- NULL
+      })
+    }
+    
+    # Remove NULL results (failed iterations)
+    iter_results <- iter_results[!sapply(iter_results, is.null)]
+    
+    if (length(iter_results) == 0) {
+      stop(paste("All bootstrap iterations failed for sample size", sample_size))
     }
     
     # Aggregate results across iterations for each metric
     aggregated <- list()
     for (m in metrics) {
-      metric_values <- sapply(iter_results, function(x) x[[m]])
+      metric_values <- sapply(iter_results, function(x) {
+        val <- x[[m]]
+        if (is.null(val) || is.na(val) || is.nan(val)) return(NA)
+        return(val)
+      })
       
-      aggregated[[m]] <- data.frame(
-        sample_size = sample_size,
-        metric_type = m,
-        mean = mean(metric_values, na.rm = TRUE),
-        median = median(metric_values, na.rm = TRUE),
-        sd = sd(metric_values, na.rm = TRUE),
-        q025 = quantile(metric_values, 0.025, na.rm = TRUE),
-        q975 = quantile(metric_values, 0.975, na.rm = TRUE),
-        stringsAsFactors = FALSE
-      )
+      # Remove NA values before computing statistics
+      metric_values <- metric_values[!is.na(metric_values)]
+      
+      if (length(metric_values) == 0) {
+        warning(paste("No valid values for metric", m, "at sample size", sample_size))
+        aggregated[[m]] <- data.frame(
+          sample_size = sample_size,
+          metric_type = m,
+          mean = NA,
+          median = NA,
+          sd = NA,
+          q025 = NA,
+          q975 = NA,
+          stringsAsFactors = FALSE
+        )
+      } else {
+        aggregated[[m]] <- data.frame(
+          sample_size = sample_size,
+          metric_type = m,
+          mean = mean(metric_values, na.rm = TRUE),
+          median = median(metric_values, na.rm = TRUE),
+          sd = sd(metric_values, na.rm = TRUE),
+          q025 = quantile(metric_values, 0.025, na.rm = TRUE),
+          q975 = quantile(metric_values, 0.975, na.rm = TRUE),
+          stringsAsFactors = FALSE
+        )
+      }
     }
     
     return(do.call(rbind, aggregated))
