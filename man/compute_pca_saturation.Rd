@@ -28,8 +28,9 @@ Default: 200}
 \item{pcs_to_analyze}{Number of principal components to include in analysis.
 Default: NULL (uses all available PCs with non-zero variance)}
 
-\item{metric}{Variance metric to compute. Options: "total_variance", "pc1_variance",
-"cumulative_variance". Default: c("total_variance", "cumulative_variance")}
+\item{metric}{Variance metric to compute. Options: "total_variance" (sum of PC ranges),
+"pc1_variance" (range of PC1), "cumulative_variance" (geometric mean of PC ranges, 
+representing morphospace volume). Default: c("total_variance", "cumulative_variance")}
 
 \item{min_sample_size}{Minimum sample size to test. Default: 5}
 
@@ -41,8 +42,10 @@ Default: NULL (uses all available PCs with non-zero variance)}
 }
 \value{
 A list with two elements:
-  \item{saturation_data}{Data frame with columns: sample_size, metric_type, mean, median, sd, q025, q975}
+\describe{
+  \item{saturation_data}{Data frame with columns: sample_size, metric_type, mean, median, sd, q025, q975, sample_proportion. Metrics represent morphospace coverage (range/volume).}
   \item{parameters}{List of analysis parameters used}
+}
 }
 \description{
 Analyzes whether the morphospace is saturated by calculating variance metrics

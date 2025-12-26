@@ -20,8 +20,10 @@
 #' @param n_cores Number of cores for parallel processing. Default: NULL (uses all available - 1)
 #'
 #' @return A list with two elements:
+#' \describe{
 #'   \item{saturation_data}{Data frame with columns: sample_size, metric_type, mean, median, sd, q025, q975, sample_proportion. Metrics represent morphospace coverage (range/volume).}
 #'   \item{parameters}{List of analysis parameters used}
+#' }
 #'
 #' @export
 #'

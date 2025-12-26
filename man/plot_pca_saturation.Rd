@@ -7,6 +7,7 @@
 plot_pca_saturation(
   saturation_result,
   x_axis = c("absolute", "proportion"),
+  normalize_metrics = TRUE,
   show_ci = TRUE,
   show_points = TRUE,
   colors = NULL,
@@ -19,6 +20,9 @@ plot_pca_saturation(
 \item{saturation_result}{Output from compute_pca_saturation()}
 
 \item{x_axis}{Type of x-axis: "absolute" (number of specimens) or "proportion" (0-1)}
+
+\item{normalize_metrics}{Normalize metrics to percentage of maximum (0-100%). 
+This allows comparing metrics with different scales. Default: TRUE}
 
 \item{show_ci}{Show confidence intervals (95% quantiles). Default: TRUE}
 
