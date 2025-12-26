@@ -896,6 +896,24 @@ detect_morphospace_gaps <- function(pca_scores,
       next
     }
     
+    # Smooth the polygons to remove grid artifacts
+    # Use a tolerance based on grid cell size
+    smooth_tolerance <- cell_size * 0.3
+    gap_polys_sf <- sf::st_simplify(gap_polys_sf, dTolerance = smooth_tolerance, preserveTopology = TRUE)
+    
+    # Apply additional smoothing using a small buffer trick (erosion-dilation)
+    # This helps smooth out the stepped edges
+    smooth_buffer <- cell_size * 0.1
+    gap_polys_sf <- sf::st_buffer(gap_polys_sf, dist = -smooth_buffer)  # Erode
+    gap_polys_sf <- sf::st_buffer(gap_polys_sf, dist = smooth_buffer)   # Dilate back
+    
+    # Remove any empty geometries from the smoothing
+    gap_polys_sf <- gap_polys_sf[!sf::st_is_empty(gap_polys_sf), ]
+    
+    if (nrow(gap_polys_sf) == 0) {
+      next
+    }
+    
     # Calculate metrics for each gap polygon
     metrics <- data.frame(
       gap_id = seq_len(nrow(gap_polys_sf)),
