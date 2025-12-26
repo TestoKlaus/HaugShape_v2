@@ -63,6 +63,19 @@ compute_pca_saturation <- function(pca_object,
     stop("pca_object must be a PCA object, prcomp object, or a matrix of PC scores")
   }
   
+  # Ensure all data is numeric
+  if (!is.numeric(pc_scores)) {
+    stop("PC scores must be numeric. Check your input data for non-numeric columns.")
+  }
+  
+  # Check for NA values
+  if (any(is.na(pc_scores))) {
+    warning("PC scores contain NA values. These will be removed from analysis.")
+    # Remove rows with any NA
+    complete_rows <- complete.cases(pc_scores)
+    pc_scores <- pc_scores[complete_rows, , drop = FALSE]
+  }
+  
   # Get number of specimens and PCs
   n_specimens <- nrow(pc_scores)
   n_pcs <- ncol(pc_scores)
@@ -101,9 +114,15 @@ compute_pca_saturation <- function(pca_object,
   compute_variance_metrics <- function(subsample_scores, metrics_to_compute) {
     results <- list()
     
-    # Compute variance per PC
-    pc_variances <- apply(subsample_scores, 2, var)
-    total_var <- sum(pc_variances)
+    # Compute variance per PC, handling NAs
+    pc_variances <- apply(subsample_scores, 2, function(x) {
+      var(x, na.rm = TRUE)
+    })
+    
+    # Replace any NaN or NA with 0
+    pc_variances[is.na(pc_variances) | is.nan(pc_variances)] <- 0
+    
+    total_var <- sum(pc_variances, na.rm = TRUE)
     
     if ("total_variance" %in% metrics_to_compute) {
       results$total_variance <- total_var

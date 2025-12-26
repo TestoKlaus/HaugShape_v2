@@ -310,8 +310,20 @@ pca_saturation_server <- function(id) {
               return()
             }
             
-            # Extract PC scores as matrix with specimen IDs as rownames if available
-            scores_matrix <- as.matrix(scores[, pc_cols])
+            # Extract PC scores as numeric matrix
+            scores_matrix <- as.matrix(scores[, pc_cols, drop = FALSE])
+            
+            # Ensure it's actually numeric (force conversion if needed)
+            mode(scores_matrix) <- "numeric"
+            
+            # Check for any conversion issues
+            if (any(is.na(scores_matrix)) && !any(is.na(scores[, pc_cols]))) {
+              shiny::showNotification(
+                "Warning: Some values could not be converted to numeric",
+                type = "warning",
+                duration = 10
+              )
+            }
             
             # Set rownames from ID column if it exists
             if ("ID" %in% names(scores)) {
