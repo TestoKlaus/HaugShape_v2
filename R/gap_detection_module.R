@@ -528,15 +528,6 @@ gap_detection_server <- function(id, pca_data = NULL) {
         }
       }
     })
-      }, error = function(e) {
-        showNotification(
-          paste("Error loading file:", e$message),
-          type = "error",
-          duration = 8
-        )
-        rv$pca_data <- NULL
-      })
-    })
     
     # Data loaded indicator
     output$data_loaded <- reactive({
