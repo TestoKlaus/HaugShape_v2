@@ -232,12 +232,6 @@ gap_detection_ui <- function(id) {
           
           h5("Output Settings"),
           
-          checkboxInput(
-            ns("auto_save"),
-            "Automatically save results to file",
-            value = TRUE
-          ),
-          
           uiOutput(ns("output_folder_ui")),
           
           hr(),
@@ -300,72 +294,6 @@ gap_detection_ui <- function(id) {
               icon = icon("trash"),
               class = "btn-warning"
             )
-          )
-        )
-      ),
-      
-      # Right column: Visualization and results
-      column(
-        width = 6,
-        
-        # Visualization Box
-        box(
-          title = "Gap Visualization",
-          status = "info",
-          solidHeader = TRUE,
-          collapsible = TRUE,
-          width = NULL,
-          
-          conditionalPanel(
-            condition = sprintf("!output['%s']", ns("analysis_complete")),
-            ns = ns,
-            
-            div(
-              style = "text-align: center; padding: 50px;",
-              icon("crosshairs", class = "fa-5x", style = "color: #ccc;"),
-              h4("Run analysis to visualize gaps", style = "color: #999;")
-            )
-          ),
-          
-          conditionalPanel(
-            condition = sprintf("output['%s']", ns("analysis_complete")),
-            ns = ns,
-            
-            fluidRow(
-              column(
-                width = 6,
-                uiOutput(ns("pc_pair_selector_ui"))
-              ),
-              column(
-                width = 6,
-                uiOutput(ns("certainty_threshold_selector_ui"))
-              )
-            ),
-            
-            hr(),
-            
-            plotOutput(
-              ns("gap_plot"),
-              height = "500px"
-            ) %>%
-              shinycssloaders::withSpinner(type = 4, color = "#3c8dbc")
-          )
-        ),
-        
-        # Results Table Box
-        box(
-          title = "Gap Metrics Table",
-          status = "info",
-          solidHeader = TRUE,
-          collapsible = TRUE,
-          collapsed = TRUE,
-          width = NULL,
-          
-          conditionalPanel(
-            condition = sprintf("output['%s']", ns("analysis_complete")),
-            ns = ns,
-            
-            DT::dataTableOutput(ns("gap_metrics_table"))
           )
         )
       )
@@ -556,12 +484,8 @@ gap_detection_server <- function(id, pca_data = NULL) {
       head(rv$pca_data, 3)
     })
     
-    # Output folder UI
+    # Output folder UI - always shown
     output$output_folder_ui <- renderUI({
-      if (!isTRUE(input$auto_save)) {
-        return(NULL)
-      }
-      
       tagList(
         fluidRow(
           column(
@@ -677,53 +601,51 @@ gap_detection_server <- function(id, pca_data = NULL) {
           rv$analysis_running <- FALSE
           rv$analysis_complete <- TRUE
           
-          # Auto-save if enabled
-          if (isTRUE(input$auto_save)) {
-            output_folder <- input$output_folder
-            
-            # Validate output folder
-            if (is.null(output_folder) || !nzchar(output_folder)) {
-              output_folder <- getwd()
-            }
-            
-            # Create directory if it doesn't exist
-            if (!dir.exists(output_folder)) {
-              tryCatch({
-                dir.create(output_folder, recursive = TRUE)
-              }, error = function(e) {
-                showNotification(
-                  paste("Could not create output folder:", e$message),
-                  type = "warning",
-                  duration = 5
-                )
-                output_folder <- getwd()
-              })
-            }
-            
-            # Generate filename with timestamp
-            timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
-            filename <- sprintf("gap_results_%s.rds", timestamp)
-            filepath <- file.path(output_folder, filename)
-            
-            # Save results
+          # Always save results to selected output folder
+          output_folder <- input$output_folder
+          
+          # Validate output folder
+          if (is.null(output_folder) || !nzchar(output_folder)) {
+            output_folder <- getwd()
+          }
+          
+          # Create directory if it doesn't exist
+          if (!dir.exists(output_folder)) {
             tryCatch({
-              saveRDS(results, filepath)
-              rv$saved_file_path <- filepath
-              
-              showNotification(
-                sprintf("Results saved to: %s", basename(filepath)),
-                type = "message",
-                duration = 8
-              )
+              dir.create(output_folder, recursive = TRUE)
             }, error = function(e) {
               showNotification(
-                paste("Error saving results:", e$message),
-                type = "error",
-                duration = 8
+                paste("Could not create output folder:", e$message),
+                type = "warning",
+                duration = 5
               )
-              rv$saved_file_path <- NULL
+              output_folder <- getwd()
             })
           }
+          
+          # Generate filename with timestamp
+          timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+          filename <- sprintf("gap_results_%s.rds", timestamp)
+          filepath <- file.path(output_folder, filename)
+          
+          # Save results
+          tryCatch({
+            saveRDS(results, filepath)
+            rv$saved_file_path <- filepath
+            
+            showNotification(
+              sprintf("Results saved to: %s", filepath),
+              type = "message",
+              duration = 8
+            )
+          }, error = function(e) {
+            showNotification(
+              paste("Error saving results:", e$message),
+              type = "error",
+              duration = 8
+            )
+            rv$saved_file_path <- NULL
+          })
           
           showNotification(
             sprintf("Analysis complete! Detected %d gap regions across %d PC pairs.",
@@ -789,9 +711,7 @@ gap_detection_server <- function(id, pca_data = NULL) {
     
     # Saved file display UI
     output$saved_file_display <- renderUI({
-      if (!isTRUE(input$auto_save) || is.null(rv$saved_file_path)) {
-        return(NULL)
-      }
+      req(rv$saved_file_path)
       
       tagList(
         hr(),
@@ -801,74 +721,6 @@ gap_detection_server <- function(id, pca_data = NULL) {
           br(),
           tags$code(rv$saved_file_path, style = "font-size: 11px; word-break: break-all;")
         )
-      )
-    })
-    
-    # PC pair selector
-    output$pc_pair_selector_ui <- renderUI({
-      req(rv$gap_results)
-      
-      pair_names <- names(rv$gap_results$results)
-      
-      selectInput(
-        session$ns("selected_pc_pair"),
-        "Select PC Pair",
-        choices = pair_names,
-        selected = pair_names[1]
-      )
-    })
-    
-    # Certainty threshold selector
-    output$certainty_threshold_selector_ui <- renderUI({
-      req(rv$gap_results)
-      
-      thresholds <- rv$gap_results$parameters$certainty_thresholds
-      
-      selectInput(
-        session$ns("selected_threshold"),
-        "Certainty Threshold",
-        choices = thresholds,
-        selected = thresholds[length(thresholds)]
-      )
-    })
-    
-    # Gap visualization plot
-    output$gap_plot <- renderPlot({
-      req(rv$gap_results, input$selected_pc_pair, input$selected_threshold)
-      
-      pair_result <- rv$gap_results$results[[input$selected_pc_pair]]
-      threshold <- as.numeric(input$selected_threshold)
-      
-      # Create plot
-      .plot_gap_result(pair_result, input$selected_pc_pair, threshold)
-    })
-    
-    # Gap metrics table
-    output$gap_metrics_table <- DT::renderDataTable({
-      req(rv$gap_results)
-      
-      summary_table <- rv$gap_results$summary_table
-      
-      if (nrow(summary_table) == 0) {
-        return(data.frame(Message = "No gaps detected"))
-      }
-      
-      # Format numeric columns
-      summary_table$area <- round(summary_table$area, 4)
-      summary_table$mean_certainty <- round(summary_table$mean_certainty, 3)
-      summary_table$max_certainty <- round(summary_table$max_certainty, 3)
-      summary_table$gap_depth <- round(summary_table$gap_depth, 4)
-      summary_table$centroid_x <- round(summary_table$centroid_x, 4)
-      summary_table$centroid_y <- round(summary_table$centroid_y, 4)
-      
-      DT::datatable(
-        summary_table,
-        options = list(
-          pageLength = 10,
-          scrollX = TRUE,
-          order = list(list(4, 'desc'))  # Sort by area descending
-        ),
-        rownames = FALSE
       )
     })
     
@@ -902,99 +754,4 @@ gap_detection_server <- function(id, pca_data = NULL) {
       showNotification("Results cleared", type = "message", duration = 3)
     })
   })
-}
-
-
-#' Plot Gap Result for Single PC Pair
-#'
-#' @param pair_result Result object for one PC pair
-#' @param pair_name Name of PC pair (e.g., "PC1-PC2")
-#' @param threshold Certainty threshold to display
-#'
-#' @keywords internal
-.plot_gap_result <- function(pair_result, pair_name, threshold) {
-  
-  # Extract data
-  gap_certainty <- pair_result$gap_certainty
-  grid_x <- pair_result$grid_x
-  grid_y <- pair_result$grid_y
-  
-  # Create data frame for plotting
-  gap_df <- expand.grid(x = grid_x, y = grid_y)
-  gap_df$certainty <- as.vector(gap_certainty)
-  
-  # Filter out NA values
-  gap_df <- gap_df[!is.na(gap_df$certainty), ]
-  
-  # Create base plot
-  p <- ggplot2::ggplot() +
-    ggplot2::geom_raster(
-      data = gap_df,
-      ggplot2::aes(x = x, y = y, fill = certainty),
-      alpha = 0.8
-    ) +
-    ggplot2::scale_fill_gradient2(
-      low = "white",
-      mid = "yellow",
-      high = "red",
-      midpoint = 0.5,
-      limits = c(0, 1),
-      name = "Gap\nCertainty"
-    ) +
-    ggplot2::theme_minimal() +
-    ggplot2::labs(
-      title = sprintf("Morphospace Gaps: %s", pair_name),
-      subtitle = sprintf("Certainty threshold: %.2f", threshold),
-      x = sub("-.*", "", pair_name),
-      y = sub(".*-", "", pair_name)
-    ) +
-    ggplot2::theme(
-      plot.title = ggplot2::element_text(size = 14, face = "bold"),
-      axis.title = ggplot2::element_text(size = 12)
-    )
-  
-  # Add gap polygons at threshold
-  gap_polygons <- pair_result$gap_polygons
-  
-  if (nrow(gap_polygons) > 0) {
-    gap_at_threshold <- gap_polygons[gap_polygons$threshold == threshold, ]
-    
-    if (nrow(gap_at_threshold) > 0) {
-      # Convert sf to data frame for ggplot
-      gap_coords_list <- lapply(seq_len(nrow(gap_at_threshold)), function(i) {
-        coords <- sf::st_coordinates(gap_at_threshold[i, ])
-        data.frame(
-          x = coords[, 1],
-          y = coords[, 2],
-          group = i
-        )
-      })
-      
-      gap_coords <- do.call(rbind, gap_coords_list)
-      
-      p <- p +
-        ggplot2::geom_polygon(
-          data = gap_coords,
-          ggplot2::aes(x = x, y = y, group = group),
-          fill = NA,
-          color = "black",
-          size = 1.2
-        )
-    }
-  }
-  
-  # Add domain hull
-  hull_coords <- sf::st_coordinates(pair_result$domain_hull)
-  hull_df <- data.frame(x = hull_coords[, 1], y = hull_coords[, 2])
-  
-  p <- p +
-    ggplot2::geom_path(
-      data = hull_df,
-      ggplot2::aes(x = x, y = y),
-      color = "blue",
-      linetype = "dashed",
-      size = 0.8
-    )
-  
-  p
 }
