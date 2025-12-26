@@ -17,9 +17,8 @@ gap_detection_ui <- function(id) {
   
   tagList(
     fluidRow(
-      # Left column: Data input and parameters
       column(
-        width = 6,
+        width = 12,
         
         # Data Input Box
         box(
@@ -44,7 +43,13 @@ gap_detection_ui <- function(id) {
             
             uiOutput(ns("data_preview_ui"))
           )
-        ),
+        )
+      )
+    ),
+    
+    fluidRow(
+      column(
+        width = 12,
         
         # Parameters Box
         box(
@@ -220,7 +225,13 @@ gap_detection_ui <- function(id) {
               step = 1
             )
           )
-        ),
+        )
+      )
+    ),
+    
+    fluidRow(
+      column(
+        width = 12,
         
         # Execution Box
         box(
