@@ -11,15 +11,16 @@
 #'   Default: 200
 #' @param pcs_to_analyze Number of principal components to include in analysis.
 #'   Default: NULL (uses all available PCs with non-zero variance)
-#' @param metric Variance metric to compute. Options: "total_variance", "pc1_variance",
-#'   "cumulative_variance". Default: c("total_variance", "cumulative_variance")
+#' @param metric Variance metric to compute. Options: "total_variance" (sum of PC ranges),
+#'   "pc1_variance" (range of PC1), "cumulative_variance" (geometric mean of PC ranges, 
+#'   representing morphospace volume). Default: c("total_variance", "cumulative_variance")
 #' @param min_sample_size Minimum sample size to test. Default: 5
 #' @param seed Random seed for reproducibility. Default: NULL
 #' @param parallel Use parallel processing for bootstrap. Default: FALSE
 #' @param n_cores Number of cores for parallel processing. Default: NULL (uses all available - 1)
 #'
 #' @return A list with two elements:
-#'   \item{saturation_data}{Data frame with columns: sample_size, metric_type, mean, median, sd, q025, q975}
+#'   \item{saturation_data}{Data frame with columns: sample_size, metric_type, mean, median, sd, q025, q975, sample_proportion. Metrics represent morphospace coverage (range/volume).}
 #'   \item{parameters}{List of analysis parameters used}
 #'
 #' @export
@@ -110,31 +111,34 @@ compute_pca_saturation <- function(pca_object,
   # Match metric argument
   metric <- match.arg(metric, several.ok = TRUE)
   
-  # Helper function to compute variance metrics for a subsample
-  compute_variance_metrics <- function(subsample_scores, metrics_to_compute) {
+  # Helper function to compute morphospace coverage metrics for a subsample
+  compute_variance_metrics <- function(subsample_scores, metrics_to_compute, full_scores = NULL) {
     results <- list()
     
-    # Compute variance per PC, handling NAs
-    pc_variances <- apply(subsample_scores, 2, function(x) {
-      var(x, na.rm = TRUE)
-    })
-    
-    # Replace any NaN or NA with 0
-    pc_variances[is.na(pc_variances) | is.nan(pc_variances)] <- 0
-    
-    total_var <- sum(pc_variances, na.rm = TRUE)
+    # Compute morphospace coverage metrics
+    # We want to measure how much of the total morphospace is captured
     
     if ("total_variance" %in% metrics_to_compute) {
-      results$total_variance <- total_var
+      # Total range across all PCs (sum of ranges)
+      pc_ranges <- apply(subsample_scores, 2, function(x) {
+        diff(range(x, na.rm = TRUE))
+      })
+      pc_ranges[is.na(pc_ranges) | is.nan(pc_ranges)] <- 0
+      results$total_variance <- sum(pc_ranges, na.rm = TRUE)
     }
     
     if ("pc1_variance" %in% metrics_to_compute) {
-      results$pc1_variance <- pc_variances[1]
+      # Range of PC1
+      results$pc1_variance <- diff(range(subsample_scores[, 1], na.rm = TRUE))
     }
     
     if ("cumulative_variance" %in% metrics_to_compute) {
-      # Cumulative variance of all selected PCs
-      results$cumulative_variance <- total_var
+      # Total morphospace volume (product of ranges, geometric measure)
+      pc_ranges <- apply(subsample_scores, 2, function(x) {
+        diff(range(x, na.rm = TRUE))
+      })
+      pc_ranges[is.na(pc_ranges) | is.nan(pc_ranges) | pc_ranges == 0] <- 1e-10
+      results$cumulative_variance <- prod(pc_ranges)^(1/length(pc_ranges))  # Geometric mean
     }
     
     return(results)
@@ -339,7 +343,7 @@ plot_pca_saturation <- function(saturation_result,
     title = title,
     subtitle = subtitle,
     x = x_lab,
-    y = "Variance",
+    y = "Morphospace Coverage",
     color = "Metric",
     fill = "Metric"
   )
