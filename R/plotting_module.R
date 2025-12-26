@@ -1076,24 +1076,53 @@ plotting_server <- function(id, data_reactive) {
       if (!is.null(p) && isTRUE(input$gaps_show)) {
         results <- gap_results()
         
-        if (!is.null(results) && !is.null(input$gap_pc_pair) && !is.null(input$gap_threshold)) {
-          tryCatch({
-            p <- .add_gap_overlay_to_plot(
-              plot = p,
-              gap_results = results,
-              pc_pair = input$gap_pc_pair,
-              threshold = as.numeric(input$gap_threshold),
-              display_mode = input$gap_display_mode,
-              alpha = input$gap_alpha,
-              low_color = input$gap_low_color,
-              mid_color = input$gap_mid_color,
-              high_color = input$gap_high_color,
-              polygon_color = input$gap_polygon_color,
-              polygon_width = input$gap_polygon_width
-            )
-          }, error = function(e) {
-            messages(paste0("Gap overlay error: ", conditionMessage(e)))
-          })
+        if (!is.null(results)) {
+          # Automatically detect PC pair from x_col and y_col
+          auto_pc_pair <- NULL
+          
+          # Try to extract PC numbers from column names
+          if (grepl("^PC[0-9]+$", x_col) && grepl("^PC[0-9]+$", y_col)) {
+            x_pc <- as.integer(gsub("PC", "", x_col))
+            y_pc <- as.integer(gsub("PC", "", y_col))
+            
+            # Try both possible orderings
+            pc_pair_name_1 <- sprintf("PC%d-PC%d", x_pc, y_pc)
+            pc_pair_name_2 <- sprintf("PC%d-PC%d", y_pc, x_pc)
+            
+            # Find which one exists in the results
+            if (pc_pair_name_1 %in% names(results$results)) {
+              auto_pc_pair <- pc_pair_name_1
+            } else if (pc_pair_name_2 %in% names(results$results)) {
+              auto_pc_pair <- pc_pair_name_2
+            }
+          }
+          
+          # Use auto-detected PC pair if available, otherwise fall back to manual selection
+          selected_pc_pair <- auto_pc_pair %||% input$gap_pc_pair
+          
+          if (!is.null(selected_pc_pair) && !is.null(input$gap_threshold)) {
+            tryCatch({
+              p <- .add_gap_overlay_to_plot(
+                plot = p,
+                gap_results = results,
+                pc_pair = selected_pc_pair,
+                threshold = as.numeric(input$gap_threshold),
+                display_mode = input$gap_display_mode,
+                alpha = input$gap_alpha,
+                low_color = input$gap_low_color,
+                mid_color = input$gap_mid_color,
+                high_color = input$gap_high_color,
+                polygon_color = input$gap_polygon_color,
+                polygon_width = input$gap_polygon_width
+              )
+            }, error = function(e) {
+              messages(paste0("Gap overlay error: ", conditionMessage(e)))
+            })
+          } else if (is.null(auto_pc_pair) && grepl("^PC[0-9]+$", x_col) && grepl("^PC[0-9]+$", y_col)) {
+            # PC columns but no gap data for this pair
+            messages(sprintf("Note: No gap data available for %s vs %s. Available PC pairs: %s",
+                           x_col, y_col, paste(names(results$results), collapse = ", ")))
+          }
         }
       }
 
