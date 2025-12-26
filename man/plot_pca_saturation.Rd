@@ -17,29 +17,27 @@ plot_pca_saturation(
 )
 }
 \arguments{
-\item{saturation_result}{Output from compute_pca_saturation()}
+\item{saturation_result}{Output from compute_pca_saturation}
 
-\item{x_axis}{Type of x-axis: "absolute" (number of specimens) or "proportion" (0-1)}
+\item{x_axis}{Type of x-axis}
 
-\item{normalize_metrics}{Normalize metrics to percentage of maximum (0-100%). 
-This allows comparing metrics with different scales. Default: TRUE}
+\item{normalize_metrics}{Normalize metrics to percentage}
 
-\item{show_ci}{Show confidence intervals (95% quantiles). Default: TRUE}
+\item{show_ci}{Show confidence intervals}
 
-\item{show_points}{Show individual data points. Default: TRUE}
+\item{show_points}{Show individual data points}
 
-\item{colors}{Named vector of colors for different metrics. Default: NULL (uses default colors)}
+\item{colors}{Color vector for metrics}
 
-\item{theme_name}{Theme to apply: "Haug", "inverted_Haug", "publication", or "default"}
+\item{theme_name}{Plot theme}
 
-\item{title}{Plot title. Default: "PCA Saturation Curve"}
+\item{title}{Plot title}
 
-\item{subtitle}{Plot subtitle. Default: NULL}
+\item{subtitle}{Plot subtitle}
 }
 \value{
 A ggplot2 object
 }
 \description{
-Creates a saturation curve plot showing how morphospace variance changes
-with increasing sample size.
+Plot PCA Saturation Curve
 }

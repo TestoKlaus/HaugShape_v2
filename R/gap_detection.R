@@ -3,56 +3,27 @@ utils::globalVariables(c("x", "y", "certainty", "group"))
 
 #' Detect Morphospace Gaps with Uncertainty Quantification
 #'
-#' Identifies regions of constraint (gaps) in morphospace derived from PCA of
-#' Elliptic Fourier Analysis (EFA) coefficients. Uses Monte Carlo simulation
-#' to account for measurement uncertainty and bootstrap resampling to assess
-#' sampling uncertainty. Analyzes all pairwise PC combinations.
+#' @param pca_scores Data frame or matrix with PC scores
+#' @param uncertainty Proportion of axis range for uncertainty radius
+#' @param grid_resolution Number of grid cells along each axis
+#' @param monte_carlo_iterations Number of Monte Carlo replicates
+#' @param bootstrap_iterations Number of bootstrap resamples
+#' @param certainty_thresholds Gap certainty thresholds for polygon extraction
+#' @param pc_pairs Optional matrix specifying PC pairs to analyze
+#' @param max_pcs Maximum PC to include in automatic pair generation
+#' @param hull_type Type of hull for domain constraint
+#' @param alpha_value Alpha parameter for alphahull
+#' @param hull_buffer Proportional buffer to add around hull
+#' @param use_parallel Use parallel processing
+#' @param n_cores Number of cores for parallel processing
+#' @param uncertainty_type Type of uncertainty model
+#' @param occupancy_method Method to determine cell occupancy
+#' @param occupancy_radius Radius for occupancy detection
+#' @param progress_callback Optional function for progress updates
+#' @param verbose Print progress messages
 #'
-#' @param pca_scores Data frame or matrix containing PC scores. Must have
-#'   columns named PC1, PC2, PC3, etc.
-#' @param uncertainty Numeric between 0 and 1. Proportion of axis range to use
-#'   as uncertainty radius (default: 0.05 for 5% uncertainty).
-#' @param grid_resolution Integer. Number of grid cells along each axis
-#'   (default: 150). Higher values increase precision but slow computation.
-#' @param monte_carlo_iterations Integer. Number of Monte Carlo replicates for
-#'   measurement uncertainty (default: 100). More iterations improve stability.
-#' @param bootstrap_iterations Integer. Number of bootstrap resamples for
-#'   sampling uncertainty (default: 200).
-#' @param certainty_thresholds Numeric vector of gap certainty thresholds for
-#'   polygon extraction (default: c(0.80, 0.90, 0.95)).
-#' @param pc_pairs Optional matrix with 2 columns specifying PC pairs to
-#'   analyze (e.g., matrix(c(1,2, 1,3), ncol=2, byrow=TRUE)). If NULL,
-#'   analyzes all pairs up to max_pcs.
-#' @param max_pcs Integer. Maximum PC to include in automatic pair generation
-#'   (default: 4, analyzing PC1-PC4).
-#' @param hull_type Character. Type of hull for domain constraint: "alpha"
-#'   (concave alpha hull, preferred) or "convex" (default: "alpha").
-#' @param alpha_value Numeric. Alpha parameter for alphahull (default: NULL,
-#'   auto-determined).
-#' @param hull_buffer Numeric. Proportional buffer to add around hull
-#'   (default: 0.05 for 5%).
-#' @param use_parallel Logical. Use parallel processing if available
-#'   (default: FALSE).
-#' @param n_cores Integer. Number of cores for parallel processing. If NULL,
-#'   uses detectCores() - 1 (default: NULL).
-#' @param uncertainty_type Character. Type of uncertainty model: "gaussian"
-#'   (bivariate normal) or "uniform" (uniform within ±u, default: "gaussian").
-#' @param occupancy_method Character. Method to determine cell occupancy:
-#'   "radius" (point within radius) or "kde" (kernel density estimation,
-#'   default: "radius").
-#' @param occupancy_radius Numeric. Radius for occupancy detection as
-#'   proportion of grid cell size (default: 1.5).
-#' @param progress_callback Optional function to call for progress updates.
-#'   Should accept two arguments: message (character) and increment (numeric 0-1).
-#' @param verbose Logical. Print progress messages (default: TRUE).
-#'
-#' @return A list of class "morphospace_gaps" containing:
-#'   \describe{
-#'     \item{pc_pairs}{Matrix of analyzed PC pairs}
-#'     \item{results}{List with one element per PC pair, each containing: grid_x (x-axis grid coordinates), grid_y (y-axis grid coordinates), gap_probability (matrix of gap probability from measurement uncertainty), gap_stability (matrix of gap stability from sampling uncertainty), gap_certainty (matrix of combined certainty = probability * stability), gap_polygons (sf object with gap polygons at each threshold), gap_metrics (data frame with gap polygon metrics), domain_hull (sf polygon of analysis domain)}
-#'     \item{summary_table}{Data frame summarizing all gaps across PC pairs}
-#'     \item{parameters}{List of analysis parameters}
-#'   }
+#' @return List of class morphospace_gaps with results
+#' @export
 #'
 #' @details
 #' The function implements a rigorous two-stage uncertainty analysis:

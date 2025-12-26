@@ -26,75 +26,47 @@ detect_morphospace_gaps(
 )
 }
 \arguments{
-\item{pca_scores}{Data frame or matrix containing PC scores. Must have
-columns named PC1, PC2, PC3, etc.}
+\item{pca_scores}{Data frame or matrix with PC scores}
 
-\item{uncertainty}{Numeric between 0 and 1. Proportion of axis range to use
-as uncertainty radius (default: 0.05 for 5% uncertainty).}
+\item{uncertainty}{Proportion of axis range for uncertainty radius}
 
-\item{grid_resolution}{Integer. Number of grid cells along each axis
-(default: 150). Higher values increase precision but slow computation.}
+\item{grid_resolution}{Number of grid cells along each axis}
 
-\item{monte_carlo_iterations}{Integer. Number of Monte Carlo replicates for
-measurement uncertainty (default: 100). More iterations improve stability.}
+\item{monte_carlo_iterations}{Number of Monte Carlo replicates}
 
-\item{bootstrap_iterations}{Integer. Number of bootstrap resamples for
-sampling uncertainty (default: 200).}
+\item{bootstrap_iterations}{Number of bootstrap resamples}
 
-\item{certainty_thresholds}{Numeric vector of gap certainty thresholds for
-polygon extraction (default: c(0.80, 0.90, 0.95)).}
+\item{certainty_thresholds}{Gap certainty thresholds for polygon extraction}
 
-\item{pc_pairs}{Optional matrix with 2 columns specifying PC pairs to
-analyze (e.g., matrix(c(1,2, 1,3), ncol=2, byrow=TRUE)). If NULL,
-analyzes all pairs up to max_pcs.}
+\item{pc_pairs}{Optional matrix specifying PC pairs to analyze}
 
-\item{max_pcs}{Integer. Maximum PC to include in automatic pair generation
-(default: 4, analyzing PC1-PC4).}
+\item{max_pcs}{Maximum PC to include in automatic pair generation}
 
-\item{hull_type}{Character. Type of hull for domain constraint: "alpha"
-(concave alpha hull, preferred) or "convex" (default: "alpha").}
+\item{hull_type}{Type of hull for domain constraint}
 
-\item{alpha_value}{Numeric. Alpha parameter for alphahull (default: NULL,
-auto-determined).}
+\item{alpha_value}{Alpha parameter for alphahull}
 
-\item{hull_buffer}{Numeric. Proportional buffer to add around hull
-(default: 0.05 for 5%).}
+\item{hull_buffer}{Proportional buffer to add around hull}
 
-\item{use_parallel}{Logical. Use parallel processing if available
-(default: FALSE).}
+\item{use_parallel}{Use parallel processing}
 
-\item{n_cores}{Integer. Number of cores for parallel processing. If NULL,
-uses detectCores() - 1 (default: NULL).}
+\item{n_cores}{Number of cores for parallel processing}
 
-\item{uncertainty_type}{Character. Type of uncertainty model: "gaussian"
-(bivariate normal) or "uniform" (uniform within ±u, default: "gaussian").}
+\item{uncertainty_type}{Type of uncertainty model}
 
-\item{occupancy_method}{Character. Method to determine cell occupancy:
-"radius" (point within radius) or "kde" (kernel density estimation,
-default: "radius").}
+\item{occupancy_method}{Method to determine cell occupancy}
 
-\item{occupancy_radius}{Numeric. Radius for occupancy detection as
-proportion of grid cell size (default: 1.5).}
+\item{occupancy_radius}{Radius for occupancy detection}
 
-\item{progress_callback}{Optional function to call for progress updates.
-Should accept two arguments: message (character) and increment (numeric 0-1).}
+\item{progress_callback}{Optional function for progress updates}
 
-\item{verbose}{Logical. Print progress messages (default: TRUE).}
+\item{verbose}{Print progress messages}
 }
 \value{
-A list of class "morphospace_gaps" containing:
-  \describe{
-    \item{pc_pairs}{Matrix of analyzed PC pairs}
-    \item{results}{List with one element per PC pair, each containing: grid_x (x-axis grid coordinates), grid_y (y-axis grid coordinates), gap_probability (matrix of gap probability from measurement uncertainty), gap_stability (matrix of gap stability from sampling uncertainty), gap_certainty (matrix of combined certainty = probability * stability), gap_polygons (sf object with gap polygons at each threshold), gap_metrics (data frame with gap polygon metrics), domain_hull (sf polygon of analysis domain)}
-    \item{summary_table}{Data frame summarizing all gaps across PC pairs}
-    \item{parameters}{List of analysis parameters}
-  }
+List of class morphospace_gaps with results
 }
 \description{
-Identifies regions of constraint (gaps) in morphospace derived from PCA of
-Elliptic Fourier Analysis (EFA) coefficients. Uses Monte Carlo simulation
-to account for measurement uncertainty and bootstrap resampling to assess
-sampling uncertainty. Analyzes all pairwise PC combinations.
+Detect Morphospace Gaps with Uncertainty Quantification
 }
 \details{
 The function implements a rigorous two-stage uncertainty analysis:

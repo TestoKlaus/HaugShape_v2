@@ -17,49 +17,27 @@ compute_pca_saturation(
 )
 }
 \arguments{
-\item{pca_object}{A PCA object (from PCA() function) or a matrix of PC scores}
+\item{pca_object}{PCA object or matrix of PC scores}
 
-\item{sample_sizes}{Numeric vector of sample sizes to test. Can be absolute numbers or proportions (0-1). Default: seq(0.1, 1, 0.1) for 10%, 20%, ..., 100 percent}
+\item{sample_sizes}{Sample sizes to test}
 
-\item{bootstrap_iterations}{Number of bootstrap resampling iterations per sample size. Default: 200}
+\item{bootstrap_iterations}{Number of bootstrap iterations}
 
-\item{pcs_to_analyze}{Number of principal components to include in analysis. Default: NULL (uses all available PCs with non-zero variance)}
+\item{pcs_to_analyze}{Number of PCs to analyze}
 
-\item{metric}{Variance metric to compute. Options: "total_variance" (sum of PC ranges), "pc1_variance" (range of PC1), "cumulative_variance" (geometric mean of PC ranges). Default: c("total_variance", "cumulative_variance")}
+\item{metric}{Variance metric to compute}
 
-\item{min_sample_size}{Minimum sample size to test. Default: 5}
+\item{min_sample_size}{Minimum sample size}
 
-\item{seed}{Random seed for reproducibility. Default: NULL}
+\item{seed}{Random seed}
 
-\item{parallel}{Use parallel processing for bootstrap. Default: FALSE}
+\item{parallel}{Use parallel processing}
 
-\item{n_cores}{Number of cores for parallel processing. Default: NULL (uses all available - 1)}
+\item{n_cores}{Number of cores}
 }
 \value{
-A list with two elements:
-  \describe{
-    \item{saturation_data}{Data frame with columns: sample_size, metric_type, mean, median, sd, q025, q975, sample_proportion. Metrics represent morphospace coverage (range/volume).}
-    \item{parameters}{List of analysis parameters used}
-  }
+List with saturation data and parameters
 }
 \description{
-Analyzes whether the morphospace is saturated by calculating variance metrics
-across different sample sizes using bootstrap resampling. This helps determine
-if adding new specimens will likely expand the morphospace.
-}
-\examples{
-\dontrun{
-# Load PCA results
-pca_result <- readRDS("pca_analysis.rds")
-
-# Compute saturation curve
-saturation <- compute_pca_saturation(
-  pca_result,
-  sample_sizes = seq(0.1, 1, 0.1),
-  bootstrap_iterations = 200
-)
-
-# Plot results
-plot_pca_saturation(saturation)
-}
+Compute PCA Saturation Curve
 }

@@ -1,42 +1,17 @@
 #' Compute PCA Saturation Curve
 #'
-#' Analyzes whether the morphospace is saturated by calculating variance metrics
-#' across different sample sizes using bootstrap resampling. This helps determine
-#' if adding new specimens will likely expand the morphospace.
+#' @param pca_object PCA object or matrix of PC scores
+#' @param sample_sizes Sample sizes to test
+#' @param bootstrap_iterations Number of bootstrap iterations
+#' @param pcs_to_analyze Number of PCs to analyze
+#' @param metric Variance metric to compute
+#' @param min_sample_size Minimum sample size
+#' @param seed Random seed
+#' @param parallel Use parallel processing
+#' @param n_cores Number of cores
 #'
-#' @param pca_object A PCA object (from PCA() function) or a matrix of PC scores
-#' @param sample_sizes Numeric vector of sample sizes to test. Can be absolute numbers or proportions (0-1). Default: seq(0.1, 1, 0.1) for 10%, 20%, ..., 100 percent
-#' @param bootstrap_iterations Number of bootstrap resampling iterations per sample size. Default: 200
-#' @param pcs_to_analyze Number of principal components to include in analysis. Default: NULL (uses all available PCs with non-zero variance)
-#' @param metric Variance metric to compute. Options: "total_variance" (sum of PC ranges), "pc1_variance" (range of PC1), "cumulative_variance" (geometric mean of PC ranges). Default: c("total_variance", "cumulative_variance")
-#' @param min_sample_size Minimum sample size to test. Default: 5
-#' @param seed Random seed for reproducibility. Default: NULL
-#' @param parallel Use parallel processing for bootstrap. Default: FALSE
-#' @param n_cores Number of cores for parallel processing. Default: NULL (uses all available - 1)
-#'
-#' @return A list with two elements:
-#'   \describe{
-#'     \item{saturation_data}{Data frame with columns: sample_size, metric_type, mean, median, sd, q025, q975, sample_proportion. Metrics represent morphospace coverage (range/volume).}
-#'     \item{parameters}{List of analysis parameters used}
-#'   }
-#'
+#' @return List with saturation data and parameters
 #' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Load PCA results
-#' pca_result <- readRDS("pca_analysis.rds")
-#'
-#' # Compute saturation curve
-#' saturation <- compute_pca_saturation(
-#'   pca_result,
-#'   sample_sizes = seq(0.1, 1, 0.1),
-#'   bootstrap_iterations = 200
-#' )
-#'
-#' # Plot results
-#' plot_pca_saturation(saturation)
-#' }
 compute_pca_saturation <- function(pca_object,
                                    sample_sizes = seq(0.1, 1, 0.1),
                                    bootstrap_iterations = 200,
@@ -269,22 +244,17 @@ compute_pca_saturation <- function(pca_object,
 
 #' Plot PCA Saturation Curve
 #'
-#' Creates a saturation curve plot showing how morphospace variance changes
-#' with increasing sample size.
-#'
-#' @param saturation_result Output from compute_pca_saturation()
-#' @param x_axis Type of x-axis: "absolute" (number of specimens) or "proportion" (0-1)
-#' @param normalize_metrics Normalize metrics to percentage of maximum (0-100%). 
-#'   This allows comparing metrics with different scales. Default: TRUE
-#' @param show_ci Show confidence intervals (95% quantiles). Default: TRUE
-#' @param show_points Show individual data points. Default: TRUE
-#' @param colors Named vector of colors for different metrics. Default: NULL (uses default colors)
-#' @param theme_name Theme to apply: "Haug", "inverted_Haug", "publication", or "default"
-#' @param title Plot title. Default: "PCA Saturation Curve"
-#' @param subtitle Plot subtitle. Default: NULL
+#' @param saturation_result Output from compute_pca_saturation
+#' @param x_axis Type of x-axis
+#' @param normalize_metrics Normalize metrics to percentage
+#' @param show_ci Show confidence intervals
+#' @param show_points Show individual data points
+#' @param colors Color vector for metrics
+#' @param theme_name Plot theme
+#' @param title Plot title
+#' @param subtitle Plot subtitle
 #'
 #' @return A ggplot2 object
-#'
 #' @export
 plot_pca_saturation <- function(saturation_result,
                                 x_axis = c("absolute", "proportion"),
