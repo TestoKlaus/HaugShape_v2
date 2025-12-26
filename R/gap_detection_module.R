@@ -108,26 +108,7 @@ gap_detection_ui <- function(id) {
                 value = FALSE
               ),
               
-              conditionalPanel(
-                condition = sprintf("!input['%s']", ns("manual_pc_pairs")),
-                ns = ns,
-                
-                numericInput(
-                  ns("max_pcs"),
-                  "Maximum PC to Analyze (all pairs)",
-                  value = 4,
-                  min = 2,
-                  max = 10,
-                  step = 1
-                )
-              ),
-              
-              conditionalPanel(
-                condition = sprintf("input['%s']", ns("manual_pc_pairs")),
-                ns = ns,
-                
-                uiOutput(ns("manual_pc_pairs_ui"))
-              ),
+              uiOutput(ns("pc_selection_ui")),
               
               selectInput(
                 ns("hull_type"),
@@ -513,40 +494,53 @@ gap_detection_server <- function(id, pca_data = NULL) {
       head(rv$pca_data, 3)
     })
     
-    # Manual PC pairs UI
-    output$manual_pc_pairs_ui <- renderUI({
-      req(rv$pca_data)
-      
-      pc_cols <- grep("^PC[0-9]+$", colnames(rv$pca_data), value = TRUE)
-      pc_numbers <- as.integer(gsub("PC", "", pc_cols))
-      
-      tagList(
-        helpText("Select specific PC pairs to analyze:"),
-        fluidRow(
-          column(
-            width = 6,
-            selectInput(
-              session$ns("manual_pc_x"),
-              "PC X:",
-              choices = pc_numbers,
-              selected = pc_numbers[1],
-              multiple = TRUE
+    # PC selection UI - switches between automatic and manual modes
+    output$pc_selection_ui <- renderUI({
+      if (isTRUE(input$manual_pc_pairs)) {
+        # Manual mode: show PC pair selectors
+        req(rv$pca_data)
+        
+        pc_cols <- grep("^PC[0-9]+$", colnames(rv$pca_data), value = TRUE)
+        pc_numbers <- as.integer(gsub("PC", "", pc_cols))
+        
+        tagList(
+          helpText("Select specific PC pairs to analyze:"),
+          fluidRow(
+            column(
+              width = 6,
+              selectInput(
+                session$ns("manual_pc_x"),
+                "PC X:",
+                choices = pc_numbers,
+                selected = pc_numbers[1],
+                multiple = TRUE
+              )
+            ),
+            column(
+              width = 6,
+              selectInput(
+                session$ns("manual_pc_y"),
+                "PC Y:",
+                choices = pc_numbers,
+                selected = if(length(pc_numbers) > 1) pc_numbers[2] else pc_numbers[1],
+                multiple = TRUE
+              )
             )
           ),
-          column(
-            width = 6,
-            selectInput(
-              session$ns("manual_pc_y"),
-              "PC Y:",
-              choices = pc_numbers,
-              selected = if(length(pc_numbers) > 1) pc_numbers[2] else pc_numbers[1],
-              multiple = TRUE
-            )
-          )
-        ),
-        helpText("All combinations of selected X and Y PCs will be analyzed."),
-        uiOutput(session$ns("manual_pairs_preview"))
-      )
+          helpText("All combinations of selected X and Y PCs will be analyzed."),
+          uiOutput(session$ns("manual_pairs_preview"))
+        )
+      } else {
+        # Automatic mode: show max_pcs input
+        numericInput(
+          session$ns("max_pcs"),
+          "Maximum PC to Analyze (all pairs)",
+          value = 4,
+          min = 2,
+          max = 10,
+          step = 1
+        )
+      }
     })
     
     # Preview of manual PC pairs
