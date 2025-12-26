@@ -20,7 +20,8 @@ ui <- dashboardPage(
       menuItem("3. Shape Analysis",   tabName = "shape_analysis",   icon = icon("project-diagram"),
         menuSubItem("Run Analysis", tabName = "shape_analysis"),
         menuSubItem("Reconstruct Shapes", tabName = "shape_reconstruction"),
-        menuSubItem("Gap Detection", tabName = "gap_detection")
+        menuSubItem("Gap Detection", tabName = "gap_detection"),
+        menuSubItem("PCA Saturation Curve", tabName = "pca_saturation", icon = icon("chart-line"))
       ),
       menuItem("4. Data Import",      tabName = "data_import",      icon = icon("table")),
       menuItem("5. Plotting",         tabName = "plotting",         icon = icon("chart-line")),
@@ -37,6 +38,7 @@ ui <- dashboardPage(
   tabItem(tabName = "data_import",      HaugShapeV2::data_import_ui("di")),
   tabItem(tabName = "plotting",         HaugShapeV2::plotting_ui("pl")),
   tabItem(tabName = "gap_detection",    HaugShapeV2::gap_detection_ui("gd")),
+  tabItem(tabName = "pca_saturation",   HaugShapeV2::pca_saturation_ui("pca_sat")),
   tabItem(tabName = "overview",         HaugShapeV2::overview_ui("ov"))
     )
   )
@@ -54,6 +56,7 @@ server <- function(input, output, session) {
   imported <- HaugShapeV2::data_import_server("di")  # list with $data reactive
   HaugShapeV2::plotting_server("pl", data_reactive = imported$data)
   HaugShapeV2::gap_detection_server("gd")
+  HaugShapeV2::pca_saturation_server("pca_sat")
   HaugShapeV2::overview_server("ov", data_reactive = imported$data)
 }
 
