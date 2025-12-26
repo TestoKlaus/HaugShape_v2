@@ -102,13 +102,31 @@ gap_detection_ui <- function(id) {
                 step = 10
               ),
               
-              numericInput(
-                ns("max_pcs"),
-                "Maximum PC to Analyze",
-                value = 4,
-                min = 2,
-                max = 10,
-                step = 1
+              checkboxInput(
+                ns("manual_pc_pairs"),
+                "Manually select PC pairs",
+                value = FALSE
+              ),
+              
+              conditionalPanel(
+                condition = sprintf("!input['%s']", ns("manual_pc_pairs")),
+                ns = ns,
+                
+                numericInput(
+                  ns("max_pcs"),
+                  "Maximum PC to Analyze (all pairs)",
+                  value = 4,
+                  min = 2,
+                  max = 10,
+                  step = 1
+                )
+              ),
+              
+              conditionalPanel(
+                condition = sprintf("input['%s']", ns("manual_pc_pairs")),
+                ns = ns,
+                
+                uiOutput(ns("manual_pc_pairs_ui"))
               ),
               
               selectInput(
@@ -495,6 +513,68 @@ gap_detection_server <- function(id, pca_data = NULL) {
       head(rv$pca_data, 3)
     })
     
+    # Manual PC pairs UI
+    output$manual_pc_pairs_ui <- renderUI({
+      req(rv$pca_data)
+      
+      pc_cols <- grep("^PC[0-9]+$", colnames(rv$pca_data), value = TRUE)
+      pc_numbers <- as.integer(gsub("PC", "", pc_cols))
+      
+      tagList(
+        helpText("Select specific PC pairs to analyze:"),
+        fluidRow(
+          column(
+            width = 6,
+            selectInput(
+              session$ns("manual_pc_x"),
+              "PC X:",
+              choices = pc_numbers,
+              selected = pc_numbers[1],
+              multiple = TRUE
+            )
+          ),
+          column(
+            width = 6,
+            selectInput(
+              session$ns("manual_pc_y"),
+              "PC Y:",
+              choices = pc_numbers,
+              selected = if(length(pc_numbers) > 1) pc_numbers[2] else pc_numbers[1],
+              multiple = TRUE
+            )
+          )
+        ),
+        helpText("All combinations of selected X and Y PCs will be analyzed."),
+        uiOutput(session$ns("manual_pairs_preview"))
+      )
+    })
+    
+    # Preview of manual PC pairs
+    output$manual_pairs_preview <- renderUI({
+      req(input$manual_pc_x, input$manual_pc_y)
+      
+      x_pcs <- as.integer(input$manual_pc_x)
+      y_pcs <- as.integer(input$manual_pc_y)
+      
+      # Generate all combinations
+      pairs <- expand.grid(x = x_pcs, y = y_pcs)
+      # Remove pairs where x >= y (avoid duplicates and self-pairs)
+      pairs <- pairs[pairs$x < pairs$y, ]
+      
+      if (nrow(pairs) == 0) {
+        return(tags$p(style = "color: orange;", icon("exclamation-triangle"), " No valid pairs selected (ensure X < Y)"))
+      }
+      
+      pair_names <- sprintf("PC%d-PC%d", pairs$x, pairs$y)
+      
+      tags$div(
+        style = "padding: 10px; background-color: #d1ecf1; border: 1px solid #bee5eb; border-radius: 4px;",
+        tags$strong(sprintf("%d pair(s) will be analyzed:", nrow(pairs))),
+        tags$br(),
+        tags$code(paste(pair_names, collapse = ", "))
+      )
+    })
+    
     # Output folder UI - always shown
     output$output_folder_ui <- renderUI({
       tagList(
@@ -555,6 +635,36 @@ gap_detection_server <- function(id, pca_data = NULL) {
       rv$analysis_running <- TRUE
       rv$analysis_complete <- FALSE
       
+      # Determine PC pairs to analyze
+      pc_pairs_to_analyze <- NULL
+      
+      if (isTRUE(input$manual_pc_pairs)) {
+        # Manual mode: build custom PC pairs matrix
+        req(input$manual_pc_x, input$manual_pc_y)
+        
+        x_pcs <- as.integer(input$manual_pc_x)
+        y_pcs <- as.integer(input$manual_pc_y)
+        
+        # Generate all combinations
+        pairs <- expand.grid(x = x_pcs, y = y_pcs)
+        # Remove pairs where x >= y (avoid duplicates and self-pairs)
+        pairs <- pairs[pairs$x < pairs$y, ]
+        
+        if (nrow(pairs) == 0) {
+          showNotification(
+            "No valid PC pairs selected. Ensure X PCs are less than Y PCs.",
+            type = "error",
+            duration = 5
+          )
+          rv$analysis_running <- FALSE
+          return()
+        }
+        
+        pc_pairs_to_analyze <- as.matrix(pairs)
+        colnames(pc_pairs_to_analyze) <- NULL
+      }
+      # If not manual mode, pc_pairs_to_analyze remains NULL and max_pcs will be used
+      
       # Gather parameters
       certainty_thresholds <- c(
         input$threshold_1,
@@ -575,11 +685,6 @@ gap_detection_server <- function(id, pca_data = NULL) {
         
         tryCatch({
           
-          # Calculate progress increments based on PC pairs
-          pc_cols <- grep("^PC[0-9]+$", colnames(rv$pca_data), value = TRUE)
-          max_pc <- min(input$max_pcs, length(pc_cols))
-          n_pairs <- choose(max_pc, 2)
-          
           # Create a custom progress callback function
           progress_fn <- function(msg, increment) {
             if (increment > 0) {
@@ -596,7 +701,8 @@ gap_detection_server <- function(id, pca_data = NULL) {
             monte_carlo_iterations = input$monte_carlo_iterations,
             bootstrap_iterations = input$bootstrap_iterations,
             certainty_thresholds = certainty_thresholds,
-            max_pcs = input$max_pcs,
+            pc_pairs = pc_pairs_to_analyze,  # NULL for automatic mode, custom matrix for manual
+            max_pcs = if (is.null(pc_pairs_to_analyze)) input$max_pcs else NULL,
             hull_type = input$hull_type,
             hull_buffer = input$hull_buffer / 100,
             uncertainty_type = input$uncertainty_type,

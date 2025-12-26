@@ -122,7 +122,15 @@ plotting_ui <- function(id) {
               accept = c(".rds"),
               placeholder = "No file selected"
             ),
-            uiOutput(ns("gap_pc_pair_selector")),
+            checkboxInput(
+              ns("gap_auto_detect_pair"),
+              "Auto-detect PC pair from plot axes",
+              value = TRUE
+            ),
+            conditionalPanel(
+              condition = sprintf("!input['%s']", ns("gap_auto_detect_pair")),
+              uiOutput(ns("gap_pc_pair_selector"))
+            ),
             uiOutput(ns("gap_threshold_selector")),
             selectInput(
               ns("gap_display_mode"),
@@ -1077,28 +1085,30 @@ plotting_server <- function(id, data_reactive) {
         results <- gap_results()
         
         if (!is.null(results)) {
-          # Automatically detect PC pair from x_col and y_col
-          auto_pc_pair <- NULL
+          selected_pc_pair <- NULL
           
-          # Try to extract PC numbers from column names
-          if (grepl("^PC[0-9]+$", x_col) && grepl("^PC[0-9]+$", y_col)) {
-            x_pc <- as.integer(gsub("PC", "", x_col))
-            y_pc <- as.integer(gsub("PC", "", y_col))
-            
-            # Try both possible orderings
-            pc_pair_name_1 <- sprintf("PC%d-PC%d", x_pc, y_pc)
-            pc_pair_name_2 <- sprintf("PC%d-PC%d", y_pc, x_pc)
-            
-            # Find which one exists in the results
-            if (pc_pair_name_1 %in% names(results$results)) {
-              auto_pc_pair <- pc_pair_name_1
-            } else if (pc_pair_name_2 %in% names(results$results)) {
-              auto_pc_pair <- pc_pair_name_2
+          # Auto-detect PC pair from plot axes if enabled
+          if (isTRUE(input$gap_auto_detect_pair)) {
+            # Try to extract PC numbers from column names
+            if (grepl("^PC[0-9]+$", x_col) && grepl("^PC[0-9]+$", y_col)) {
+              x_pc <- as.integer(gsub("PC", "", x_col))
+              y_pc <- as.integer(gsub("PC", "", y_col))
+              
+              # Try both possible orderings
+              pc_pair_name_1 <- sprintf("PC%d-PC%d", x_pc, y_pc)
+              pc_pair_name_2 <- sprintf("PC%d-PC%d", y_pc, x_pc)
+              
+              # Find which one exists in the results
+              if (pc_pair_name_1 %in% names(results$results)) {
+                selected_pc_pair <- pc_pair_name_1
+              } else if (pc_pair_name_2 %in% names(results$results)) {
+                selected_pc_pair <- pc_pair_name_2
+              }
             }
+          } else {
+            # Use manual selection
+            selected_pc_pair <- input$gap_pc_pair
           }
-          
-          # Use auto-detected PC pair if available, otherwise fall back to manual selection
-          selected_pc_pair <- auto_pc_pair %||% input$gap_pc_pair
           
           if (!is.null(selected_pc_pair) && !is.null(input$gap_threshold)) {
             tryCatch({
@@ -1118,8 +1128,8 @@ plotting_server <- function(id, data_reactive) {
             }, error = function(e) {
               messages(paste0("Gap overlay error: ", conditionMessage(e)))
             })
-          } else if (is.null(auto_pc_pair) && grepl("^PC[0-9]+$", x_col) && grepl("^PC[0-9]+$", y_col)) {
-            # PC columns but no gap data for this pair
+          } else if (isTRUE(input$gap_auto_detect_pair) && is.null(selected_pc_pair) && grepl("^PC[0-9]+$", x_col) && grepl("^PC[0-9]+$", y_col)) {
+            # PC columns but no gap data for this pair (only warn in auto mode)
             messages(sprintf("Note: No gap data available for %s vs %s. Available PC pairs: %s",
                            x_col, y_col, paste(names(results$results), collapse = ", ")))
           }
