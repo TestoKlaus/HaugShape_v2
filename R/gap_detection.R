@@ -49,17 +49,7 @@ utils::globalVariables(c("x", "y", "certainty", "group"))
 #' @return A list of class "morphospace_gaps" containing:
 #'   \describe{
 #'     \item{pc_pairs}{Matrix of analyzed PC pairs}
-#'     \item{results}{List with one element per PC pair, each containing:}
-#'       \describe{
-#'         \item{grid_x}{Vector of x-axis grid coordinates}
-#'         \item{grid_y}{Vector of y-axis grid coordinates}
-#'         \item{gap_probability}{Matrix of gap probability (measurement uncertainty)}
-#'         \item{gap_stability}{Matrix of gap stability (sampling uncertainty)}
-#'         \item{gap_certainty}{Matrix of combined certainty = probability * stability}
-#'         \item{gap_polygons}{sf object with gap polygons at each threshold}
-#'         \item{gap_metrics}{Data frame with gap polygon metrics}
-#'         \item{domain_hull}{sf polygon of analysis domain}
-#'       }
+#'     \item{results}{List with one element per PC pair, each containing: grid_x (x-axis grid coordinates), grid_y (y-axis grid coordinates), gap_probability (matrix of gap probability from measurement uncertainty), gap_stability (matrix of gap stability from sampling uncertainty), gap_certainty (matrix of combined certainty = probability * stability), gap_polygons (sf object with gap polygons at each threshold), gap_metrics (data frame with gap polygon metrics), domain_hull (sf polygon of analysis domain)}
 #'     \item{summary_table}{Data frame summarizing all gaps across PC pairs}
 #'     \item{parameters}{List of analysis parameters}
 #'   }
