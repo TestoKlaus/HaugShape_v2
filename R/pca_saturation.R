@@ -5,15 +5,10 @@
 #' if adding new specimens will likely expand the morphospace.
 #'
 #' @param pca_object A PCA object (from PCA() function) or a matrix of PC scores
-#' @param sample_sizes Numeric vector of sample sizes to test. Can be absolute numbers
-#'   or proportions (0-1). Default: seq(0.1, 1, 0.1) for 10%, 20%, ..., 100%
-#' @param bootstrap_iterations Number of bootstrap resampling iterations per sample size.
-#'   Default: 200
-#' @param pcs_to_analyze Number of principal components to include in analysis.
-#'   Default: NULL (uses all available PCs with non-zero variance)
-#' @param metric Variance metric to compute. Options: "total_variance" (sum of PC ranges),
-#'   "pc1_variance" (range of PC1), "cumulative_variance" (geometric mean of PC ranges, 
-#'   representing morphospace volume). Default: c("total_variance", "cumulative_variance")
+#' @param sample_sizes Numeric vector of sample sizes to test. Can be absolute numbers or proportions (0-1). Default: seq(0.1, 1, 0.1) for 10%, 20%, ..., 100 percent
+#' @param bootstrap_iterations Number of bootstrap resampling iterations per sample size. Default: 200
+#' @param pcs_to_analyze Number of principal components to include in analysis. Default: NULL (uses all available PCs with non-zero variance)
+#' @param metric Variance metric to compute. Options: "total_variance" (sum of PC ranges), "pc1_variance" (range of PC1), "cumulative_variance" (geometric mean of PC ranges). Default: c("total_variance", "cumulative_variance")
 #' @param min_sample_size Minimum sample size to test. Default: 5
 #' @param seed Random seed for reproducibility. Default: NULL
 #' @param parallel Use parallel processing for bootstrap. Default: FALSE

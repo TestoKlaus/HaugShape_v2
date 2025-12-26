@@ -19,18 +19,13 @@ compute_pca_saturation(
 \arguments{
 \item{pca_object}{A PCA object (from PCA() function) or a matrix of PC scores}
 
-\item{sample_sizes}{Numeric vector of sample sizes to test. Can be absolute numbers
-or proportions (0-1). Default: seq(0.1, 1, 0.1) for 10%, 20%, ..., 100%}
+\item{sample_sizes}{Numeric vector of sample sizes to test. Can be absolute numbers or proportions (0-1). Default: seq(0.1, 1, 0.1) for 10%, 20%, ..., 100 percent}
 
-\item{bootstrap_iterations}{Number of bootstrap resampling iterations per sample size.
-Default: 200}
+\item{bootstrap_iterations}{Number of bootstrap resampling iterations per sample size. Default: 200}
 
-\item{pcs_to_analyze}{Number of principal components to include in analysis.
-Default: NULL (uses all available PCs with non-zero variance)}
+\item{pcs_to_analyze}{Number of principal components to include in analysis. Default: NULL (uses all available PCs with non-zero variance)}
 
-\item{metric}{Variance metric to compute. Options: "total_variance" (sum of PC ranges),
-"pc1_variance" (range of PC1), "cumulative_variance" (geometric mean of PC ranges, 
-representing morphospace volume). Default: c("total_variance", "cumulative_variance")}
+\item{metric}{Variance metric to compute. Options: "total_variance" (sum of PC ranges), "pc1_variance" (range of PC1), "cumulative_variance" (geometric mean of PC ranges). Default: c("total_variance", "cumulative_variance")}
 
 \item{min_sample_size}{Minimum sample size to test. Default: 5}
 
