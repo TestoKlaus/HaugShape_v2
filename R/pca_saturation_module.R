@@ -296,18 +296,38 @@ pca_saturation_server <- function(id) {
             # Read Excel file (single sheet expected from shape_analysis)
             scores <- openxlsx::read.xlsx(file_path, sheet = 1)
             
-            # Identify PC columns (numeric columns, typically PC1, PC2, etc.)
-            # Exclude ID column and any other non-numeric columns
-            numeric_cols <- sapply(scores, is.numeric)
-            pc_cols <- names(scores)[numeric_cols]
+            # Identify PC columns by name pattern (PC1, PC2, PC3, ...)
+            # This is more robust than just selecting all numeric columns
+            all_cols <- names(scores)
+            pc_pattern <- "^PC[0-9]+$"  # Matches PC1, PC2, PC10, etc.
+            pc_cols <- all_cols[grepl(pc_pattern, all_cols, ignore.case = TRUE)]
+            
+            # Sort PC columns numerically (PC1, PC2, ..., PC10, PC11, ...)
+            if (length(pc_cols) > 0) {
+              pc_numbers <- as.numeric(gsub("^PC", "", pc_cols, ignore.case = TRUE))
+              pc_cols <- pc_cols[order(pc_numbers)]
+            }
             
             if (length(pc_cols) == 0) {
               shiny::showNotification(
-                "No numeric PC columns found in Excel file",
+                "No PC columns found (looking for PC1, PC2, PC3, ...)",
                 type = "error",
                 duration = 10
               )
               return()
+            }
+            
+            # Verify they are numeric
+            non_numeric <- pc_cols[!sapply(scores[, pc_cols], is.numeric)]
+            if (length(non_numeric) > 0) {
+              shiny::showNotification(
+                paste("Warning: These PC columns are not numeric:", 
+                      paste(non_numeric, collapse = ", ")),
+                type = "warning",
+                duration = 10
+              )
+              # Remove non-numeric PC columns
+              pc_cols <- pc_cols[sapply(scores[, pc_cols], is.numeric)]
             }
             
             # Extract PC scores as numeric matrix
