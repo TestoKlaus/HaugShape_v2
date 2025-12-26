@@ -277,6 +277,8 @@ compute_pca_saturation <- function(pca_object,
 #'
 #' @param saturation_result Output from compute_pca_saturation()
 #' @param x_axis Type of x-axis: "absolute" (number of specimens) or "proportion" (0-1)
+#' @param normalize_metrics Normalize metrics to percentage of maximum (0-100%). 
+#'   This allows comparing metrics with different scales. Default: TRUE
 #' @param show_ci Show confidence intervals (95% quantiles). Default: TRUE
 #' @param show_points Show individual data points. Default: TRUE
 #' @param colors Named vector of colors for different metrics. Default: NULL (uses default colors)
@@ -289,6 +291,7 @@ compute_pca_saturation <- function(pca_object,
 #' @export
 plot_pca_saturation <- function(saturation_result,
                                 x_axis = c("absolute", "proportion"),
+                                normalize_metrics = TRUE,
                                 show_ci = TRUE,
                                 show_points = TRUE,
                                 colors = NULL,
@@ -305,6 +308,25 @@ plot_pca_saturation <- function(saturation_result,
   # Extract data
   data <- saturation_result$saturation_data
   params <- saturation_result$parameters
+  
+  # Normalize metrics to percentage of maximum if requested
+  if (normalize_metrics) {
+    # For each metric type, divide by its maximum mean value
+    for (metric in unique(data$metric_type)) {
+      metric_rows <- data$metric_type == metric
+      max_val <- max(data$mean[metric_rows], na.rm = TRUE)
+      
+      if (max_val > 0) {
+        data$mean[metric_rows] <- (data$mean[metric_rows] / max_val) * 100
+        data$median[metric_rows] <- (data$median[metric_rows] / max_val) * 100
+        data$q025[metric_rows] <- (data$q025[metric_rows] / max_val) * 100
+        data$q975[metric_rows] <- (data$q975[metric_rows] / max_val) * 100
+      }
+    }
+    y_lab <- "Morphospace Coverage (% of Maximum)"
+  } else {
+    y_lab <- "Morphospace Coverage"
+  }
   
   # Determine x variable
   x_var <- if (x_axis == "proportion") "sample_proportion" else "sample_size"
@@ -343,7 +365,7 @@ plot_pca_saturation <- function(saturation_result,
     title = title,
     subtitle = subtitle,
     x = x_lab,
-    y = "Morphospace Coverage",
+    y = y_lab,
     color = "Metric",
     fill = "Metric"
   )

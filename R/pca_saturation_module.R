@@ -155,15 +155,23 @@ pca_saturation_ui <- function(id) {
               )
             ),
             shiny::column(
-              width = 3,
+              width = 2,
               shiny::checkboxInput(
-                ns("show_ci"),
-                "Show Confidence Intervals",
+                ns("normalize"),
+                "Normalize Metrics",
                 value = TRUE
               )
             ),
             shiny::column(
-              width = 3,
+              width = 2,
+              shiny::checkboxInput(
+                ns("show_ci"),
+                "Show CI",
+                value = TRUE
+              )
+            ),
+            shiny::column(
+              width = 2,
               shiny::checkboxInput(
                 ns("show_points"),
                 "Show Points",
@@ -459,6 +467,7 @@ pca_saturation_server <- function(id) {
       plot_pca_saturation(
         saturation_results(),
         x_axis = input$x_axis_type,
+        normalize_metrics = input$normalize,
         show_ci = input$show_ci,
         show_points = input$show_points,
         theme_name = input$theme
