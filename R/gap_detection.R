@@ -233,6 +233,10 @@ detect_morphospace_gaps <- function(pca_scores,
     pc_y <- pc_pairs[i, 2]
     pair_name <- sprintf("PC%d-PC%d", pc_x, pc_y)
     
+    # Construct column names
+    col_x <- sprintf("PC%d", pc_x)
+    col_y <- sprintf("PC%d", pc_y)
+    
     if (verbose) {
       cat(sprintf("\n=== Analyzing %s (%d/%d) ===\n", 
                   pair_name, i, nrow(pc_pairs)))
