@@ -471,13 +471,21 @@ detect_morphospace_gaps <- function(pca_scores,
     
     # Determine alpha value if not provided
     if (is.null(alpha_value)) {
-      # Auto-determine alpha: use mean nearest neighbor distance
+      # Auto-determine alpha: use a more inclusive approach
+      # Calculate pairwise distances
       dists <- as.matrix(dist(points))
       diag(dists) <- NA
-      alpha_value <- mean(apply(dists, 1, min, na.rm = TRUE))
+      
+      # Strategy: Use maximum nearest neighbor distance (most inclusive)
+      # This ensures even outlier points are included in the hull
+      max_nn_dist <- max(apply(dists, 1, min, na.rm = TRUE))
+      
+      # Use 2x the max nearest neighbor distance for a generous hull
+      # This captures the full distribution including sparse regions
+      alpha_value <- 2 * max_nn_dist
       
       if (verbose) {
-        cat(sprintf("  Alpha hull: auto alpha = %.3f\n", alpha_value))
+        cat(sprintf("  Alpha hull: auto alpha = %.4f (2x max nearest neighbor)\n", alpha_value))
       }
     }
     
