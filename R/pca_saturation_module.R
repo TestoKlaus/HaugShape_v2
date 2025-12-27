@@ -184,23 +184,15 @@ pca_saturation_ui <- function(id) {
           
           shiny::fluidRow(
             shiny::column(
-              width = 4,
+              width = 6,
               shiny::downloadButton(
-                ns("download_plot_pdf"),
-                "Download Plot (PDF)",
+                ns("download_plot_rds"),
+                "Download Plot (RDS)",
                 class = "btn-primary btn-block"
               )
             ),
             shiny::column(
-              width = 4,
-              shiny::downloadButton(
-                ns("download_plot_png"),
-                "Download Plot (PNG)",
-                class = "btn-primary btn-block"
-              )
-            ),
-            shiny::column(
-              width = 4,
+              width = 6,
               shiny::downloadButton(
                 ns("download_data"),
                 "Download Data (CSV)",
@@ -507,35 +499,20 @@ pca_saturation_server <- function(id) {
     })
     
     # Download handlers
-    output$download_plot_pdf <- shiny::downloadHandler(
+    output$download_plot_rds <- shiny::downloadHandler(
       filename = function() {
-        paste0("pca_saturation_curve_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".pdf")
+        paste0("pca_saturation_plot_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".rds")
       },
       content = function(file) {
         p <- plot_pca_saturation(
           saturation_results(),
           x_axis = input$x_axis_type,
+          normalize_metrics = input$normalize,
           show_ci = input$show_ci,
           show_points = input$show_points,
           theme_name = input$theme
         )
-        ggplot2::ggsave(file, plot = p, width = 10, height = 6, device = "pdf")
-      }
-    )
-    
-    output$download_plot_png <- shiny::downloadHandler(
-      filename = function() {
-        paste0("pca_saturation_curve_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png")
-      },
-      content = function(file) {
-        p <- plot_pca_saturation(
-          saturation_results(),
-          x_axis = input$x_axis_type,
-          show_ci = input$show_ci,
-          show_points = input$show_points,
-          theme_name = input$theme
-        )
-        ggplot2::ggsave(file, plot = p, width = 10, height = 6, device = "png", dpi = 300)
+        saveRDS(p, file)
       }
     )
     
