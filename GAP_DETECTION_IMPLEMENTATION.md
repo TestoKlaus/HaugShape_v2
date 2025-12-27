@@ -35,6 +35,7 @@ detect_morphospace_gaps(
   grid_resolution = 150,         # 150×150 grid
   monte_carlo_iterations = 100,  # Monte Carlo replicates
   bootstrap_iterations = 200,    # Bootstrap resamples
+  bootstrap_sample_size = NULL,  # Optional: subsample size for bootstrap (NULL = full dataset)
   certainty_thresholds = c(0.80, 0.90, 0.95),
   max_pcs = 4,                   # Analyze PC1-PC4
   hull_type = "alpha",           # Concave alpha hull
@@ -286,6 +287,121 @@ This implementation follows rigorous statistical methodology for morphological c
 2. Use `grid_resolution=100` for quick analyses
 3. Enable parallel processing for production runs
 4. Analyze fewer PC pairs (`max_pcs=3`) if only interested in primary axes
+
+## Bootstrap Sample Size Control
+
+### Overview
+The `bootstrap_sample_size` parameter allows you to control how many specimens are resampled during each bootstrap iteration. This is crucial for **comparing gap patterns across datasets with different sample sizes**.
+
+### Problem
+When comparing gap detection results between groups with vastly different sample sizes (e.g., 50 Cretaceous ants vs. 666 extant ants), the larger dataset will appear to have:
+- Lower gap certainty (more specimens fill in potential gaps)
+- Fewer detected gaps
+- Higher sampling stability
+
+This makes direct comparison misleading, as differences may reflect sample size rather than true morphological constraints.
+
+### Solution
+By setting `bootstrap_sample_size` to normalize all datasets to the **smallest sample size**, you can make fair comparisons that account for sampling uncertainty equally across groups.
+
+### Usage Modes
+
+**1. Fraction Mode** (values ≤ 1):
+```r
+# Resample 50% of dataset for each bootstrap iteration
+gaps <- detect_morphospace_gaps(
+  pca_scores = large_dataset,
+  bootstrap_sample_size = 0.5  # 50% of data
+)
+```
+
+**2. Absolute Count Mode** (values > 1):
+```r
+# Resample exactly 50 specimens for each bootstrap iteration
+gaps <- detect_morphospace_gaps(
+  pca_scores = large_dataset,
+  bootstrap_sample_size = 50  # Exact count
+)
+```
+
+**3. Default Mode** (NULL):
+```r
+# Use full dataset size (standard bootstrap)
+gaps <- detect_morphospace_gaps(
+  pca_scores = dataset,
+  bootstrap_sample_size = NULL  # Full dataset
+)
+```
+
+### Example Workflow: Comparing Temporal Datasets
+
+```r
+# Dataset sizes:
+# - cretaceous_ants: 50 specimens
+# - eocene_ants: 150 specimens  
+# - miocene_ants: 300 specimens
+# - extant_ants: 666 specimens
+
+# Normalize all analyses to smallest sample size (50)
+gaps_cretaceous <- detect_morphospace_gaps(
+  pca_scores = cretaceous_pca$x,
+  bootstrap_sample_size = 50,  # Uses all 50
+  max_pcs = 3
+)
+
+gaps_eocene <- detect_morphospace_gaps(
+  pca_scores = eocene_pca$x,
+  bootstrap_sample_size = 50,  # Subsamples from 150
+  max_pcs = 3
+)
+
+gaps_miocene <- detect_morphospace_gaps(
+  pca_scores = miocene_pca$x,
+  bootstrap_sample_size = 50,  # Subsamples from 300
+  max_pcs = 3
+)
+
+gaps_extant <- detect_morphospace_gaps(
+  pca_scores = extant_pca$x,
+  bootstrap_sample_size = 50,  # Subsamples from 666
+  max_pcs = 3
+)
+
+# Now all four analyses have equivalent bootstrap sample sizes
+# Differences in gap patterns reflect true morphological differences,
+# not artifacts of different sample sizes
+```
+
+### Technical Details
+
+**Bootstrap Resampling**:
+- Sampling is **with replacement** (standard bootstrap methodology)
+- If `bootstrap_sample_size < n_points`, each iteration randomly samples a subset
+- If `bootstrap_sample_size >= n_points`, uses full dataset (with warning)
+- Minimum allowed: 2 specimens
+
+**Validation**:
+- Backend validates that sample size is positive and ≥ 2
+- UI warns if value exceeds dataset size
+- Fraction mode validates that resulting count is ≥ 2
+
+**Display**:
+- Console output shows: "Bootstrap will resample 50 specimens (7.5% of 666 total)"
+- Results object stores both requested and actual sample size in `parameters$bootstrap_sample_size` and `parameters$bootstrap_actual_size`
+
+### When to Use
+
+✅ **Use subsampling when**:
+- Comparing multiple groups with unequal sample sizes
+- Assessing impact of sample size on gap detection
+- Normalizing for sample size in statistical comparisons
+- Limited computational resources (smaller samples = faster)
+
+❌ **Don't use subsampling when**:
+- Analyzing a single dataset
+- All datasets have similar sample sizes (±20%)
+- Maximizing statistical power (use full dataset)
+- Already have adequate sample size (>200 specimens)
 
 ## Future Enhancements
 

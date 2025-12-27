@@ -8,6 +8,11 @@ utils::globalVariables(c("x", "y", "certainty", "group"))
 #' @param grid_resolution Number of grid cells along each axis
 #' @param monte_carlo_iterations Number of Monte Carlo replicates
 #' @param bootstrap_iterations Number of bootstrap resamples
+#' @param bootstrap_sample_size Optional subsample size for bootstrap iterations.
+#'   If NULL (default), uses full dataset. Values <= 1 are treated as fractions
+#'   (e.g., 0.5 = 50% of data). Values > 1 are treated as absolute counts.
+#'   Useful for comparing datasets with different sample sizes by normalizing
+#'   to the smallest dataset size.
 #' @param certainty_thresholds Gap certainty thresholds for polygon extraction
 #' @param pc_pairs Optional matrix specifying PC pairs to analyze
 #' @param max_pcs Maximum PC to include in automatic pair generation
@@ -73,6 +78,7 @@ detect_morphospace_gaps <- function(pca_scores,
                                     grid_resolution = 150,
                                     monte_carlo_iterations = 100,
                                     bootstrap_iterations = 200,
+                                    bootstrap_sample_size = NULL,
                                     certainty_thresholds = c(0.80, 0.90, 0.95),
                                     pc_pairs = NULL,
                                     max_pcs = 4,
@@ -167,12 +173,47 @@ detect_morphospace_gaps <- function(pca_scores,
     }
   }
   
+  # Validate bootstrap_sample_size
+  n_total_samples <- nrow(pca_scores)
+  if (!is.null(bootstrap_sample_size)) {
+    if (bootstrap_sample_size <= 0) {
+      stop("bootstrap_sample_size must be positive")
+    }
+    # Support both fraction (0-1) and absolute count (>1)
+    if (bootstrap_sample_size <= 1) {
+      # Fraction mode
+      actual_sample_size <- floor(n_total_samples * bootstrap_sample_size)
+      if (actual_sample_size < 2) {
+        stop(sprintf("bootstrap_sample_size fraction %.3f results in < 2 samples", bootstrap_sample_size))
+      }
+    } else {
+      # Absolute count mode
+      actual_sample_size <- floor(bootstrap_sample_size)
+      if (actual_sample_size > n_total_samples) {
+        warning(sprintf("bootstrap_sample_size (%d) exceeds dataset size (%d). Using full dataset.",
+                       actual_sample_size, n_total_samples))
+        actual_sample_size <- n_total_samples
+      }
+      if (actual_sample_size < 2) {
+        stop("bootstrap_sample_size must be at least 2")
+      }
+    }
+    if (verbose) {
+      cat(sprintf("Bootstrap will resample %d specimens (%.1f%% of %d total)\n",
+                  actual_sample_size, 100 * actual_sample_size / n_total_samples, n_total_samples))
+    }
+  } else {
+    actual_sample_size <- n_total_samples
+  }
+  
   # Store parameters
   parameters <- list(
     uncertainty = uncertainty,
     grid_resolution = grid_resolution,
     monte_carlo_iterations = monte_carlo_iterations,
     bootstrap_iterations = bootstrap_iterations,
+    bootstrap_sample_size = bootstrap_sample_size,
+    bootstrap_actual_size = actual_sample_size,
     certainty_thresholds = certainty_thresholds,
     hull_type = hull_type,
     alpha_value = alpha_value,
@@ -397,6 +438,7 @@ detect_morphospace_gaps <- function(pca_scores,
     u_y = u_y,
     in_domain = in_domain,
     bootstrap_iterations = bootstrap_iterations,
+    bootstrap_sample_size = actual_sample_size,
     monte_carlo_iterations = monte_carlo_iterations,
     uncertainty_type = uncertainty_type,
     occupancy_method = occupancy_method,
@@ -727,6 +769,7 @@ detect_morphospace_gaps <- function(pca_scores,
                                    u_y,
                                    in_domain,
                                    bootstrap_iterations,
+                                   bootstrap_sample_size = NULL,
                                    monte_carlo_iterations,
                                    uncertainty_type,
                                    occupancy_method,
@@ -739,6 +782,17 @@ detect_morphospace_gaps <- function(pca_scores,
   n_grid_y <- length(grid_y)
   n_points <- nrow(points)
   
+  # Determine bootstrap sample size
+  if (is.null(bootstrap_sample_size)) {
+    boot_size <- n_points
+  } else if (bootstrap_sample_size <= 1) {
+    # Fraction mode
+    boot_size <- floor(n_points * bootstrap_sample_size)
+  } else {
+    # Absolute count mode
+    boot_size <- min(floor(bootstrap_sample_size), n_points)
+  }
+  
   # Initialize gap classification counter
   gap_count <- matrix(0, nrow = n_grid_x, ncol = n_grid_y)
   
@@ -748,7 +802,7 @@ detect_morphospace_gaps <- function(pca_scores,
   # Bootstrap iterations
   for (b in 1:bootstrap_iterations) {
     # Resample points with replacement
-    boot_indices <- sample(1:n_points, size = n_points, replace = TRUE)
+    boot_indices <- sample(1:n_points, size = boot_size, replace = TRUE)
     boot_points <- points[boot_indices, ]
     
     # Compute gap probability for this bootstrap sample

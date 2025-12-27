@@ -102,6 +102,29 @@ gap_detection_ui <- function(id) {
               ),
               
               checkboxInput(
+                ns("use_bootstrap_subsample"),
+                "Subsample for bootstrap",
+                value = FALSE
+              ),
+              
+              conditionalPanel(
+                condition = sprintf("input['%s']", ns("use_bootstrap_subsample")),
+                ns = ns,
+                
+                numericInput(
+                  ns("bootstrap_sample_size"),
+                  "Sample Size (count or fraction ≤1)",
+                  value = 50,
+                  min = 2,
+                  step = 1
+                ),
+                
+                helpText(HTML("<small>For fractions, use values ≤1 (e.g., 0.5 = 50%).<br>",
+                            "For absolute counts, use values >1 (e.g., 50 specimens).<br>",
+                            "<strong>Use case:</strong> Normalize sample sizes when comparing datasets.</small>"))
+              ),
+              
+              checkboxInput(
                 ns("manual_pc_pairs"),
                 "Manually select PC pairs",
                 value = FALSE
@@ -680,12 +703,20 @@ gap_detection_server <- function(id, pca_data = NULL) {
             }
           }
           
+          # Determine bootstrap sample size if subsampling is enabled
+          bootstrap_sample_size <- if (input$use_bootstrap_subsample) {
+            input$bootstrap_sample_size
+          } else {
+            NULL
+          }
+          
           results <- detect_morphospace_gaps(
             pca_scores = rv$pca_data,
             uncertainty = input$uncertainty / 100,
             grid_resolution = input$grid_resolution,
             monte_carlo_iterations = input$monte_carlo_iterations,
             bootstrap_iterations = input$bootstrap_iterations,
+            bootstrap_sample_size = bootstrap_sample_size,
             certainty_thresholds = certainty_thresholds,
             pc_pairs = pc_pairs_to_analyze,  # NULL for automatic mode, custom matrix for manual
             max_pcs = if (is.null(pc_pairs_to_analyze)) input$max_pcs else NULL,

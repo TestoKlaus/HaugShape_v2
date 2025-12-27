@@ -35,6 +35,10 @@ The Gap Detection feature identifies statistically rigorous gaps (regions of con
    - **Maximum PC**: 4 (analyze PC1-PC4)
    - **Hull Type**: Alpha Hull (concave, preferred)
    - **Certainty Thresholds**: 0.80, 0.90, 0.95
+   - **Bootstrap Subsample** (optional):
+     - ✅ Check "Subsample for bootstrap" if comparing datasets with different sample sizes
+     - Enter sample size: absolute count (e.g., 50) or fraction (e.g., 0.5 for 50%)
+     - Use case: Normalize to smallest dataset when comparing groups
 
 5. **Set output location**
    - ✅ "Automatically save results to file" should be checked
@@ -208,6 +212,85 @@ image(pc1_pc2$gap_certainty,
       main = "Gap Certainty: PC1-PC2",
       xlab = "PC1", ylab = "PC2")
 ```
+
+## Comparing Datasets with Different Sample Sizes
+
+When comparing gap patterns across groups with unequal sample sizes, use bootstrap subsampling to normalize:
+
+```r
+library(HaugShapeV2)
+
+# Example: Comparing temporal datasets
+# - cretaceous_ants: 50 specimens
+# - eocene_ants: 150 specimens
+# - miocene_ants: 300 specimens
+# - extant_ants: 666 specimens
+
+# Find smallest sample size
+min_n <- 50  # Cretaceous dataset
+
+# Run gap detection with normalized sample size
+gaps_cretaceous <- detect_morphospace_gaps(
+  pca_scores = cretaceous_pca,
+  bootstrap_sample_size = 50,  # Uses all 50 specimens
+  monte_carlo_iterations = 100,
+  bootstrap_iterations = 200,
+  max_pcs = 3
+)
+
+gaps_eocene <- detect_morphospace_gaps(
+  pca_scores = eocene_pca,
+  bootstrap_sample_size = 50,  # Subsamples 50 from 150
+  monte_carlo_iterations = 100,
+  bootstrap_iterations = 200,
+  max_pcs = 3
+)
+
+gaps_miocene <- detect_morphospace_gaps(
+  pca_scores = miocene_pca,
+  bootstrap_sample_size = 50,  # Subsamples 50 from 300
+  monte_carlo_iterations = 100,
+  bootstrap_iterations = 200,
+  max_pcs = 3
+)
+
+gaps_extant <- detect_morphospace_gaps(
+  pca_scores = extant_pca,
+  bootstrap_sample_size = 50,  # Subsamples 50 from 666
+  monte_carlo_iterations = 100,
+  bootstrap_iterations = 200,
+  max_pcs = 3
+)
+
+# Save all results
+saveRDS(gaps_cretaceous, "gaps_cretaceous_n50.rds")
+saveRDS(gaps_eocene, "gaps_eocene_n50.rds")
+saveRDS(gaps_miocene, "gaps_miocene_n50.rds")
+saveRDS(gaps_extant, "gaps_extant_n50.rds")
+
+# Compare gap metrics
+compare_gaps <- rbind(
+  data.frame(Period = "Cretaceous", gaps_cretaceous$summary_table),
+  data.frame(Period = "Eocene", gaps_eocene$summary_table),
+  data.frame(Period = "Miocene", gaps_miocene$summary_table),
+  data.frame(Period = "Extant", gaps_extant$summary_table)
+)
+
+# Visualize gap areas by period
+library(ggplot2)
+ggplot(compare_gaps, aes(x = Period, y = area, fill = Period)) +
+  geom_boxplot() +
+  facet_wrap(~threshold) +
+  theme_minimal() +
+  labs(title = "Gap Area Comparison (Normalized to n=50)",
+       y = "Gap Area (morphospace units²)")
+```
+
+**Key points:**
+- All datasets normalized to **same bootstrap sample size** (50)
+- Differences reflect true morphological patterns, not sample size artifacts
+- Use **absolute count** mode for cross-dataset comparisons
+- Use **fraction** mode (0-1) for sensitivity analyses within single dataset
 
 ## Next Steps
 

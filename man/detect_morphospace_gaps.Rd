@@ -10,6 +10,7 @@ detect_morphospace_gaps(
   grid_resolution = 150,
   monte_carlo_iterations = 100,
   bootstrap_iterations = 200,
+  bootstrap_sample_size = NULL,
   certainty_thresholds = c(0.8, 0.9, 0.95),
   pc_pairs = NULL,
   max_pcs = 4,
@@ -35,6 +36,12 @@ detect_morphospace_gaps(
 \item{monte_carlo_iterations}{Number of Monte Carlo replicates}
 
 \item{bootstrap_iterations}{Number of bootstrap resamples}
+
+\item{bootstrap_sample_size}{Optional subsample size for bootstrap iterations.
+If NULL (default), uses full dataset. Values <= 1 are treated as fractions
+(e.g., 0.5 = 50% of data). Values > 1 are treated as absolute counts.
+Useful for comparing datasets with different sample sizes by normalizing
+to the smallest dataset size.}
 
 \item{certainty_thresholds}{Gap certainty thresholds for polygon extraction}
 
@@ -108,6 +115,24 @@ print(gaps$summary_table)
 # Access results for PC1-PC2
 pc1_pc2_gaps <- gaps$results$`PC1-PC2`
 plot(pc1_pc2_gaps$gap_certainty)
+
+# Compare datasets with different sample sizes
+# E.g., cretaceous_ants has 50 specimens, extant_ants has 666
+# Subsample extant_ants to 50 for fair comparison
+gaps_cretaceous <- detect_morphospace_gaps(
+  pca_scores = cretaceous_pca$x,
+  bootstrap_sample_size = 50,  # Use all 50 specimens
+  max_pcs = 3
+)
+
+gaps_extant <- detect_morphospace_gaps(
+  pca_scores = extant_pca$x,
+  bootstrap_sample_size = 50,  # Subsample to 50 from 666
+  max_pcs = 3
+)
+
+# Now both analyses use same sample size for bootstrap
+# enabling proper comparison of gap certainty patterns
 }
 
 }
