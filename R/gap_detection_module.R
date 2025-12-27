@@ -108,7 +108,7 @@ gap_detection_ui <- function(id) {
               ),
               
               conditionalPanel(
-                condition = sprintf("input['%s']", ns("use_bootstrap_subsample")),
+                condition = "input.use_bootstrap_subsample == true",
                 ns = ns,
                 
                 numericInput(
@@ -704,10 +704,15 @@ gap_detection_server <- function(id, pca_data = NULL) {
           }
           
           # Determine bootstrap sample size if subsampling is enabled
-          bootstrap_sample_size <- if (input$use_bootstrap_subsample) {
-            input$bootstrap_sample_size
+          bootstrap_sample_size <- if (isTRUE(input$use_bootstrap_subsample)) {
+            # Only use if checkbox is checked and value exists
+            if (!is.null(input$bootstrap_sample_size) && !is.na(input$bootstrap_sample_size)) {
+              input$bootstrap_sample_size
+            } else {
+              NULL
+            }
           } else {
-            NULL
+            NULL  # Use full dataset when unchecked
           }
           
           results <- detect_morphospace_gaps(
