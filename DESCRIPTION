@@ -36,12 +36,17 @@ Imports:
     grDevices,
     graphics,
     stats,
-    utils
+    utils,
+    sf,
+    alphahull
 Suggests:
     testthat (>= 3.0.0),
     knitr,
     rmarkdown,
-    devtools
+    devtools,
+    future.apply,
+    MASS,
+    parallel
 VignetteBuilder: knitr
 URL: https://github.com/TestoKlaus/HaugShape_v2
 BugReports: https://github.com/TestoKlaus/HaugShape_v2/issues

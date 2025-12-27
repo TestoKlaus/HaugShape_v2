@@ -57,7 +57,6 @@ shape_analysis_server <- function(id) {
 
     # package availability
     shinyfiles_ready <- reactiveVal(FALSE)
-    momocs_ready <- reactiveVal(FALSE)
     openxlsx_ready <- reactiveVal(FALSE)
 
     # Try to ensure dependencies
@@ -68,14 +67,6 @@ shape_analysis_server <- function(id) {
         ready <- requireNamespace("shinyFiles", quietly = TRUE)
       }
       shinyfiles_ready(isTRUE(ready))
-    })
-    observe({
-      r1 <- requireNamespace("Momocs", quietly = TRUE)
-      if (!isTRUE(r1)) {
-        try(install.packages("Momocs", repos = "https://cran.r-project.org", quiet = TRUE), silent = TRUE)
-        r1 <- requireNamespace("Momocs", quietly = TRUE)
-      }
-      momocs_ready(isTRUE(r1))
     })
     observe({
       r2 <- requireNamespace("openxlsx", quietly = TRUE)

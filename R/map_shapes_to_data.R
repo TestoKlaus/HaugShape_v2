@@ -1,7 +1,7 @@
 #' Map Shape Files to Data Frame
 #'
 #' Maps shape files (JPEG/JPG) from a directory to rows in a data frame based on
-#' ID matching. Shapes are imported using the Momocs package and added as a new
+#' ID matching. Shapes are imported using adapted Momocs code and added as a new
 #' column. Supports batch processing, validation, and comprehensive error handling.
 #'
 #' @param data A data frame containing IDs for matching with shape file names.
@@ -21,7 +21,7 @@
 #' @param verbose Logical indicating whether to print progress messages. Default: TRUE.
 #'
 #' @return A data frame with an additional shape column containing imported shapes
-#'   as Momocs Out objects or NULL for unmatched rows. Also includes attributes:
+#'   as Out objects or NULL for unmatched rows. Also includes attributes:
 #'   \describe{
 #'     \item{mapping_summary}{Summary of mapping results}
 #'     \item{failed_imports}{List of files that failed to import}
@@ -354,7 +354,7 @@ map_shapes_to_data <- function(data,
 .import_single_shape <- function(file_path, params, verbose) {
   
   tryCatch({
-    # Import using Momocs
+    # Import using adapted Momocs code
     shape_data <- import_jpg(file_path)
     shape_out <- Out(shape_data)
     

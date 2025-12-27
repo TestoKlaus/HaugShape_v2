@@ -15,6 +15,10 @@
 #'   See Details for available options.
 #' @param labels List containing label options (title, axis labels).
 #' @param export_options List containing export options. See Details for available options.
+#' @param interactive Logical indicating whether to enable interactive plotly mode. Default: FALSE.
+#'   When TRUE, returns a plotly object with hover events. Requires plotly package.
+#' @param pca_model Optional PCA model list for interactive reconstruction. Only used when interactive = TRUE.
+#'   If provided, enables real-time shape reconstruction on hover. Can be created with extract_pca_model().
 #' @param verbose Logical indicating whether to print progress messages. Default: TRUE.
 #'
 #' @details
@@ -42,18 +46,23 @@
 #' \describe{
 #'   \item{export}{Logical, whether to export the plot (default: FALSE)}
 #'   \item{filename}{Base filename without extension}
-#'   \item{path}{Optional output directory}
-#'   \item{format}{Output format, e.g. "tiff" or "jpg"}
-#'   \item{dpi}{Resolution in dots per inch (default: 300)}
-#'   \item{width}{Optional width in inches}
-#'   \item{height}{Optional height in inches}
+#'   \item{path}{Optional output directory (if NULL, uses working directory)}
+#'   \item{format}{Output format: "rds", "svg", "tiff", or "png"}
+#'   \item{width}{Width in inches (optional for SVG, required for TIFF/PNG, ignored for RDS)}
+#'   \item{height}{Height in inches (optional for SVG, required for TIFF/PNG, ignored for RDS)}
+#'   \item{dpi}{Resolution in dots per inch for raster formats only (default: 300)}
 #' }
-#' Notes on export behavior:
-#' - Shapes and geometry will not be distorted: by default a fixed 1:1 aspect ratio is applied.
-#' - If only one of width/height is provided, the other is computed to preserve the aspect ratio.
-#' - If both are provided, the plot maintains its aspect ratio inside the image, adding padding as needed.
+#' Notes on export formats:
+#' - RDS: Saves the ggplot object for later editing in R
+#' - SVG: Vector format with base dimensions (scalable without quality loss)
+#' - TIFF/PNG: Raster formats requiring width, height, and DPI specifications
 #'
-#' @return A ggplot2 object representing the scatter plot.
+#' When \code{interactive = TRUE}, the plot is converted to plotly for interactive exploration.
+#' If \code{pca_model} is also provided, hovering over the morphospace will show:
+#' - For data points: ID and existing shape (if available in data)
+#' - For empty space: Reconstructed hypothetical shape at those PC coordinates
+#'
+#' @return A ggplot2 object (default) or plotly object (when interactive = TRUE).
 #'
 #' @examples
 #' # Basic scatter plot
@@ -102,6 +111,8 @@ shape_plot <- function(data,
                       features = list(),
                       labels = list(),
                       export_options = list(),
+                      interactive = FALSE,
+                      pca_model = NULL,
                       verbose = TRUE) {
   
   # Input validation ----
@@ -194,6 +205,155 @@ shape_plot <- function(data,
   # Export if requested ----
   if (params$export_options$export) {
     .export_plot(plot, params$export_options, verbose)
+  }
+  
+  # Convert to interactive plotly if requested ----
+  if (interactive) {
+    if (!requireNamespace("plotly", quietly = TRUE)) {
+      warning("Package 'plotly' is required for interactive mode. Returning static ggplot2 object.")
+      return(plot)
+    }
+    
+    if (verbose) {
+      message("Converting to interactive plotly plot...")
+    }
+    
+    # Create custom hover text with IDs
+    hover_data <- clean_data
+    id_col <- if ("ID" %in% names(hover_data)) "ID" else NULL
+    
+    if (!is.null(id_col)) {
+      hover_text <- paste0(
+        "ID: ", hover_data[[id_col]], "\n",
+        x_col, ": ", round(hover_data[[x_col]], 3), "\n",
+        y_col, ": ", round(hover_data[[y_col]], 3)
+      )
+      
+      # Store hover text in plot data for plotly conversion
+      plot$data$text <- hover_text
+    }
+    
+    # Convert to plotly with event source for Shiny reactivity
+    plotly_plot <- plotly::ggplotly(plot, tooltip = "text", source = "morphospace")
+    
+    # Add invisible background grid to capture hover events across entire plot area
+    # This allows reconstruction to work everywhere, not just near data points
+    if (!is.null(pca_model)) {
+      # Get plot range from data
+      x_range <- range(clean_data[[x_col]], na.rm = TRUE)
+      y_range <- range(clean_data[[y_col]], na.rm = TRUE)
+      
+      # Expand range slightly
+      x_padding <- diff(x_range) * 0.1
+      y_padding <- diff(y_range) * 0.1
+      x_range <- x_range + c(-x_padding, x_padding)
+      y_range <- y_range + c(-y_padding, y_padding)
+      
+      # Create a grid of invisible points covering the plot area
+      grid_density <- 50  # Points per axis
+      x_grid <- seq(x_range[1], x_range[2], length.out = grid_density)
+      y_grid <- seq(y_range[1], y_range[2], length.out = grid_density)
+      grid_points <- expand.grid(x = x_grid, y = y_grid)
+      
+      # Add invisible trace at the beginning (will be rendered first, below everything)
+      invisible_trace <- list(
+        x = grid_points$x,
+        y = grid_points$y,
+        type = "scatter",
+        mode = "markers",
+        marker = list(
+          size = 8,
+          opacity = 0,  # Completely invisible
+          color = "rgba(0,0,0,0)"
+        ),
+        hoverinfo = "x+y",
+        hovertemplate = paste0(x_col, ": %{x:.3f}<br>", y_col, ": %{y:.3f}<extra></extra>"),
+        showlegend = FALSE,
+        name = "morphospace"
+      )
+      
+      # Insert at beginning so it's rendered first (bottom layer)
+      plotly_plot$x$data <- c(list(invisible_trace), plotly_plot$x$data)
+    }
+    
+    # Reorder traces to ensure points are on top of hulls/polygons
+    # This is crucial for hover events to work correctly on data points
+    if (length(plotly_plot$x$data) > 1) {
+      # Skip the first trace if it's our invisible background grid
+      start_idx <- if (!is.null(pca_model)) 2 else 1
+      traces_to_check <- seq(start_idx, length(plotly_plot$x$data))
+      
+      # Identify point traces vs polygon/fill traces
+      point_indices <- which(sapply(traces_to_check, function(idx) {
+        trace <- plotly_plot$x$data[[idx]]
+        # Points have mode="markers" or type="scatter" with markers
+        (!is.null(trace$mode) && grepl("markers", trace$mode)) ||
+        (!is.null(trace$type) && trace$type == "scatter" && !is.null(trace$marker))
+      }))
+      if (length(point_indices) > 0) point_indices <- traces_to_check[point_indices]
+      
+      polygon_indices <- which(sapply(traces_to_check, function(idx) {
+        trace <- plotly_plot$x$data[[idx]]
+        # Polygons typically have fill or are paths without markers
+        (!is.null(trace$fill) && trace$fill != "none") ||
+        (!is.null(trace$mode) && trace$mode == "lines" && is.null(trace$marker))
+      }))
+      if (length(polygon_indices) > 0) polygon_indices <- traces_to_check[polygon_indices]
+      
+      # Reorder: invisible grid (if exists), polygons, other traces, then points on top
+      if (length(point_indices) > 0 && length(polygon_indices) > 0) {
+        base_traces <- if (!is.null(pca_model)) list(plotly_plot$x$data[[1]]) else list()
+        other_indices <- setdiff(traces_to_check, c(point_indices, polygon_indices))
+        new_order <- c(
+          if (!is.null(pca_model)) 1 else NULL,  # Invisible grid stays first
+          polygon_indices, 
+          other_indices, 
+          point_indices
+        )
+        plotly_plot$x$data <- plotly_plot$x$data[new_order]
+      }
+    }
+    
+    # Configure for better interaction and styling
+    plotly_plot <- plotly::layout(
+      plotly_plot,
+      hovermode = "closest",
+      dragmode = "pan",
+      # Minimal axis styling - no labels, no ticks, no grid
+      xaxis = list(
+        title = "",
+        showgrid = FALSE,
+        zeroline = TRUE,
+        zerolinecolor = "rgba(0,0,0,0.5)",
+        showline = FALSE,
+        mirror = FALSE,
+        ticks = "",
+        showticklabels = FALSE
+      ),
+      yaxis = list(
+        title = "",
+        showgrid = FALSE,
+        zeroline = TRUE,
+        zerolinecolor = "rgba(0,0,0,0.5)",
+        showline = FALSE,
+        mirror = FALSE,
+        ticks = "",
+        showticklabels = FALSE
+      ),
+      # Set plot background
+      plot_bgcolor = "white",
+      paper_bgcolor = "white"
+    )
+    
+    # Attach PCA model if provided (for Shiny use)
+    if (!is.null(pca_model)) {
+      attr(plotly_plot, "pca_model") <- pca_model
+      if (verbose) {
+        message("PCA model attached for interactive reconstruction")
+      }
+    }
+    
+    return(plotly_plot)
   }
   
   return(plot)
@@ -1098,65 +1258,86 @@ shape_plot <- function(data,
 
 # Export Functions ----
 
-#' Export plot to file
+#' Export plot to file (RDS, SVG, TIFF, or PNG)
 #' @noRd
 .export_plot <- function(plot, export_options, verbose) {
+  
+  # Validate format
+  fmt <- tolower(export_options$format)
+  if (!fmt %in% c("rds", "svg", "tiff", "png")) {
+    stop("Unsupported export format: '", export_options$format, "'. ",
+         "Supported formats: rds, svg, tiff, png", call. = FALSE)
+  }
   
   # Setup file path
   if (!is.null(export_options$path)) {
     if (!dir.exists(export_options$path)) {
       stop("Export path does not exist: ", export_options$path, call. = FALSE)
     }
-    file_path <- file.path(export_options$path, paste0(export_options$filename, ".", export_options$format))
+    file_path <- file.path(export_options$path, 
+                          paste0(export_options$filename, ".", fmt))
   } else {
-    file_path <- paste0(export_options$filename, ".", export_options$format)
+    file_path <- paste0(export_options$filename, ".", fmt)
   }
   
   if (verbose) message("Exporting plot to: ", file_path)
   
-  # Determine aspect ratio from plot build if available, fallback to 1 (square)
-  aspect_ratio <- try({
-    cf <- plot$coordinates
-    r <- tryCatch(cf$ratio, error = function(...) NULL)
-    if (is.null(r)) 1 else as.numeric(r)
-  }, silent = TRUE)
-  if (!is.numeric(aspect_ratio) || !is.finite(aspect_ratio) || aspect_ratio <= 0) aspect_ratio <- 1
-
-  # Compute width/height if one is missing to preserve aspect
-  width <- export_options$width
-  height <- export_options$height
-  if (is.null(width) && is.null(height)) {
-    # Sensible defaults maintaining aspect
-    height <- 6
-    width <- height / aspect_ratio
-  } else if (is.null(width) && !is.null(height)) {
-    width <- height / aspect_ratio
-  } else if (!is.null(width) && is.null(height)) {
-    height <- width * aspect_ratio
-  }
-
-  # Choose device based on format to avoid ambiguity
-  fmt <- tolower(export_options$format)
-  device <- switch(fmt,
-    "tif" = grDevices::tiff,
-    "tiff" = grDevices::tiff,
-    "jpg" = grDevices::jpeg,
-    "jpeg" = grDevices::jpeg,
-    "png" = grDevices::png,
-    NULL
-  )
-
   tryCatch({
-    ggplot2::ggsave(
-      filename = file_path,
-      plot = plot,
-      width = width,
-      height = height,
-      dpi = export_options$dpi,
-      device = device
-    )
+    if (fmt == "rds") {
+      # Save ggplot object as RDS for later editing in R
+      saveRDS(plot, file = file_path)
+      if (verbose) message("ggplot object saved as RDS")
+      
+    } else if (fmt == "svg") {
+      # Export as SVG (vector format with base dimensions)
+      width <- export_options$width
+      height <- export_options$height
+      
+      # Use defaults if not provided
+      if (is.null(width)) width <- 8
+      if (is.null(height)) height <- 8
+      
+      ggplot2::ggsave(
+        filename = file_path,
+        plot = plot,
+        width = width,
+        height = height,
+        device = "svg"
+      )
+      if (verbose) {
+        message(sprintf("Plot exported as SVG (%g x %g inches base size)", 
+                       width, height))
+      }
+      
+    } else if (fmt %in% c("tiff", "png")) {
+      # Export as raster with specified dimensions
+      width <- export_options$width
+      height <- export_options$height
+      dpi <- if (!is.null(export_options$dpi)) export_options$dpi else 300
+      
+      # Validate dimensions are provided for raster formats
+      if (is.null(width) || is.null(height)) {
+        stop("Width and height must be specified for ", 
+             toupper(fmt), " export", call. = FALSE)
+      }
+      
+      # Export using ggsave
+      ggplot2::ggsave(
+        filename = file_path,
+        plot = plot,
+        width = width,
+        height = height,
+        dpi = dpi,
+        device = fmt
+      )
+      if (verbose) {
+        message(sprintf("Plot exported as %s (%g x %g inches, %d DPI)", 
+                       toupper(fmt), width, height, dpi))
+      }
+    }
     
-    if (verbose) message("Plot exported successfully")
+    if (verbose) message("Export completed successfully")
+    
   }, error = function(e) {
     stop("Failed to export plot: ", e$message, call. = FALSE)
   })

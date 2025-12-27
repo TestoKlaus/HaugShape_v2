@@ -40,6 +40,37 @@ data_import_ui <- function(id) {
           )
         ),
         box(
+          title = "Subset Data",
+          status = "primary",
+          solidHeader = TRUE,
+          width = 12,
+          collapsible = TRUE,
+          collapsed = TRUE,
+          helpText("Filter rows based on column values. Multiple filters are combined with AND logic."),
+          fluidRow(
+            column(3, selectInput(ns("filter_col"), "Column", choices = NULL)),
+            column(3, selectInput(ns("filter_op"), "Operator", 
+                                 choices = c("==" = "eq", "!=" = "ne", ">" = "gt", 
+                                           "<" = "lt", ">=" = "ge", "<=" = "le",
+                                           "contains" = "contains", "starts with" = "starts",
+                                           "ends with" = "ends", "is NA" = "is_na", 
+                                           "is not NA" = "not_na"),
+                                 selected = "eq")),
+            column(3, uiOutput(ns("filter_value_ui"))),
+            column(3, div(style = "margin-top: 24px;", 
+                         actionButton(ns("filter_add"), "Add filter", class = "btn-primary")))
+          ),
+          uiOutput(ns("active_filters_ui")),
+          fluidRow(
+            column(6, div(style = "margin-top: 8px;",
+                         actionButton(ns("filter_apply"), "Apply filters", class = "btn-success"))),
+            column(6, div(style = "margin-top: 8px;",
+                         actionButton(ns("filter_reset"), "Reset to original", class = "btn-warning")))
+          ),
+          br(),
+          textOutput(ns("subset_status"))
+        ),
+        box(
           title = "Map shapes to data",
           status = "primary",
           solidHeader = TRUE,
@@ -56,24 +87,13 @@ data_import_ui <- function(id) {
           verbatimTextOutput(ns("mapping_summary"))
         ),
         box(
-          title = "Data Preview",
-          status = "info",
+          title = "Group Builder",
+          status = "primary",
           solidHeader = TRUE,
           width = 12,
           collapsible = TRUE,
-          fluidRow(
-            column(12,
-              checkboxInput(ns("enable_edit"), "Enable editing", value = FALSE)
-            )
-          ),
-          fluidRow(
-            column(4, textInput(ns("new_col_name"), "New column name", value = "")),
-            column(3, selectInput(ns("new_col_type"), "New column type", choices = c("character","numeric","logical"), selected = "character")),
-            column(3, uiOutput(ns("new_col_default_ui"))),
-            column(2, div(style = "margin-top: 24px;", actionButton(ns("add_col_btn"), "Add column", class = "btn-primary")))
-          ),
-          hr(),
-          tags$h4("Group builder"),
+          collapsed = TRUE,
+          helpText("Create or modify grouping columns by defining rules based on ID ranges or lists."),
           fluidRow(
             column(4, textInput(ns("group_target_col"), "Target column (new or existing)", value = "group")),
             column(4, selectInput(ns("group_id_col"), "ID column for grouping", choices = NULL)),
@@ -89,8 +109,14 @@ data_import_ui <- function(id) {
           fluidRow(
             column(3, div(style = "margin-top: 8px;", actionButton(ns("group_apply"), "Apply rules", class = "btn-success"))),
             column(9, div(style = "margin-top: 14px;", textOutput(ns("group_status"))))
-          ),
-          hr(),
+          )
+        ),
+        box(
+          title = "Data Preview",
+          status = "info",
+          solidHeader = TRUE,
+          width = 12,
+          collapsible = TRUE,
           helpText("To overwrite the original Excel file, pick its location and confirm overwrite."),
           fluidRow(
             column(6,
@@ -124,6 +150,12 @@ data_import_server <- function(id) {
 
     # Working copy of data (editable)
     working_data <- reactiveVal(NULL)
+    
+    # Store original unfiltered data
+    original_data <- reactiveVal(NULL)
+    
+    # Store active filters
+    active_filters <- reactiveVal(list())
 
     # Track selected sheet options
     sheet_names <- reactiveVal(character())
@@ -213,6 +245,176 @@ data_import_server <- function(id) {
     observeEvent(data_reactive(), {
       df <- data_reactive()
       working_data(df)
+      original_data(df)
+      active_filters(list())  # Reset filters when new data loaded
+    })
+
+    # Subsetting logic ----
+    
+    # Update filter column choices
+    observe({
+      df <- original_data()
+      req(df)
+      cols <- names(df)
+      updateSelectInput(session, "filter_col", choices = cols, 
+                       selected = if (!is.null(input$filter_col) && input$filter_col %in% cols) input$filter_col else cols[1])
+    })
+    
+    # Dynamic filter value input (hide for NA checks)
+    output$filter_value_ui <- renderUI({
+      req(input$filter_op)
+      if (input$filter_op %in% c("is_na", "not_na")) {
+        return(NULL)
+      }
+      textInput(ns("filter_value"), "Value", value = "")
+    })
+    
+    # Add filter to list
+    observeEvent(input$filter_add, {
+      req(input$filter_col, input$filter_op)
+      
+      # Get value (not needed for NA checks)
+      val <- if (input$filter_op %in% c("is_na", "not_na")) {
+        NULL
+      } else {
+        req(input$filter_value)
+        input$filter_value
+      }
+      
+      # Create filter object
+      new_filter <- list(
+        col = input$filter_col,
+        op = input$filter_op,
+        value = val,
+        id = length(active_filters()) + 1
+      )
+      
+      # Add to active filters
+      filters <- active_filters()
+      filters[[length(filters) + 1]] <- new_filter
+      active_filters(filters)
+      
+      # Clear value input
+      updateTextInput(session, "filter_value", value = "")
+    })
+    
+    # Display active filters
+    output$active_filters_ui <- renderUI({
+      filters <- active_filters()
+      if (length(filters) == 0) {
+        return(helpText("No filters added yet"))
+      }
+      
+      # Create human-readable filter descriptions with remove buttons
+      filter_rows <- lapply(seq_along(filters), function(i) {
+        f <- filters[[i]]
+        op_text <- switch(f$op,
+          "eq" = "==", "ne" = "!=", "gt" = ">", "lt" = "<", 
+          "ge" = ">=", "le" = "<=", "contains" = "contains",
+          "starts" = "starts with", "ends" = "ends with",
+          "is_na" = "is NA", "not_na" = "is not NA"
+        )
+        desc <- if (is.null(f$value)) {
+          sprintf("%s %s", f$col, op_text)
+        } else {
+          sprintf("%s %s '%s'", f$col, op_text, f$value)
+        }
+        fluidRow(
+          column(9, tags$code(desc)),
+          column(3, actionButton(ns(paste0("remove_filter_", i)), "Remove", 
+                                class = "btn-sm btn-danger"))
+        )
+      })
+      
+      tagList(
+        tags$hr(),
+        tags$strong("Active filters:"),
+        tags$div(style = "margin-top: 8px;", filter_rows)
+      )
+    })
+    
+    # Remove individual filters
+    observe({
+      filters <- active_filters()
+      if (length(filters) == 0) return()
+      
+      lapply(seq_along(filters), function(i) {
+        observeEvent(input[[paste0("remove_filter_", i)]], {
+          current_filters <- active_filters()
+          if (i <= length(current_filters)) {
+            current_filters[[i]] <- NULL
+            active_filters(current_filters)
+          }
+        }, ignoreInit = TRUE)
+      })
+    })
+    
+    # Apply filters
+    observeEvent(input$filter_apply, {
+      df <- original_data()
+      req(df)
+      
+      filters <- active_filters()
+      if (length(filters) == 0) {
+        showNotification("No filters to apply", type = "warning")
+        return()
+      }
+      
+      # Apply each filter
+      filtered <- df
+      for (f in filters) {
+        col_data <- filtered[[f$col]]
+        
+        # Apply operator
+        keep_rows <- switch(f$op,
+          "eq" = col_data == f$value,
+          "ne" = col_data != f$value,
+          "gt" = as.numeric(col_data) > as.numeric(f$value),
+          "lt" = as.numeric(col_data) < as.numeric(f$value),
+          "ge" = as.numeric(col_data) >= as.numeric(f$value),
+          "le" = as.numeric(col_data) <= as.numeric(f$value),
+          "contains" = grepl(f$value, as.character(col_data), fixed = TRUE),
+          "starts" = grepl(paste0("^", f$value), as.character(col_data)),
+          "ends" = grepl(paste0(f$value, "$"), as.character(col_data)),
+          "is_na" = is.na(col_data),
+          "not_na" = !is.na(col_data),
+          rep(TRUE, nrow(filtered))
+        )
+        
+        # Handle NA in comparisons
+        keep_rows[is.na(keep_rows)] <- FALSE
+        
+        filtered <- filtered[keep_rows, , drop = FALSE]
+      }
+      
+      working_data(filtered)
+      showNotification(
+        sprintf("Filtered: %d rows remaining (from %d)", nrow(filtered), nrow(df)),
+        type = "message"
+      )
+    })
+    
+    # Reset to original data
+    observeEvent(input$filter_reset, {
+      df <- original_data()
+      req(df)
+      working_data(df)
+      active_filters(list())
+      showNotification("Data reset to original", type = "message")
+    })
+    
+    # Subset status display
+    output$subset_status <- renderText({
+      orig <- original_data()
+      current <- working_data()
+      if (is.null(orig) || is.null(current)) return("")
+      
+      if (nrow(current) == nrow(orig)) {
+        sprintf("Showing all %d rows", nrow(orig))
+      } else {
+        sprintf("Showing %d of %d rows (%.1f%% filtered)", 
+                nrow(current), nrow(orig), 100 * nrow(current) / nrow(orig))
+      }
     })
 
     # Update group ID column choices for the Group builder
@@ -405,61 +607,15 @@ data_import_server <- function(id) {
         display_df$shape <- vapply(display_df$shape, function(x) if (is.null(x)) "NULL" else "Out", character(1))
       }
 
-      # Disable editing for problematic columns
-      non_editable <- which(names(display_df) %in% c("shape"))
-      # DT editable toggle
-      if (isTRUE(input$enable_edit)) {
-        # DataTables expects 0-based column indices for disabling edits
-        disabled_cols <- if (length(non_editable)) (non_editable - 1L) else NULL
-        edit_cfg <- list(target = "cell", disable = list(columns = disabled_cols))
-      } else {
-        edit_cfg <- FALSE
-      }
-
-      # When editing enabled, disable ordering/filter to keep row indices stable
       page_len <- if (!is.null(input$n_rows)) input$n_rows else 20
       DT::datatable(
         display_df,
-        options = list(pageLength = min(50, page_len), scrollX = TRUE, ordering = !isTRUE(input$enable_edit)),
+        options = list(pageLength = min(50, page_len), scrollX = TRUE, ordering = TRUE),
         rownames = FALSE,
-        filter = if (isTRUE(input$enable_edit)) "none" else "top",
+        filter = "top",
         selection = "none",
-        editable = edit_cfg
+        editable = FALSE
       )
-    })
-
-    # Apply cell edits to working_data
-    observeEvent(input$preview_cell_edit, {
-      if (!isTRUE(input$enable_edit)) return()
-      info <- input$preview_cell_edit
-      isolate({
-        df <- working_data(); if (is.null(df)) return()
-  r <- as.integer(info$row); j <- as.integer(info$col) + 1L
-        # Guard
-        if (j < 1 || j > ncol(df) || r < 1 || r > nrow(df)) return()
-        col_name <- names(df)[j]
-        # Skip non-editable
-        if (col_name %in% c("shape")) return()
-        val <- info$value
-        # Coerce to column type
-        if (is.numeric(df[[j]])) {
-          new_val <- suppressWarnings(as.numeric(val))
-        } else if (is.logical(df[[j]])) {
-          v <- tolower(trimws(as.character(val)))
-          new_val <- ifelse(v %in% c("true","t","1","yes"), TRUE,
-                     ifelse(v %in% c("false","f","0","no"), FALSE, NA))
-        } else {
-          new_val <- as.character(val)
-        }
-        df[r, j] <- new_val
-        working_data(df)
-        # Update the rendered table in place to avoid full re-render and scroll jumps
-        display_df <- df
-        if ("shape" %in% names(display_df) && is.list(display_df$shape)) {
-          display_df$shape <- vapply(display_df$shape, function(x) if (is.null(x)) "NULL" else "Out", character(1))
-        }
-        DT::replaceData(proxy, display_df, resetPaging = FALSE, rownames = FALSE)
-      })
     })
 
     # Group builder rules handling ------------------------------------------
@@ -563,46 +719,6 @@ data_import_server <- function(id) {
 
 
     # Export removed: edits apply in-place to working_data and propagate downstream
-    # New column default UI based on type
-    output$new_col_default_ui <- renderUI({
-      type <- input$new_col_type %||% "character"
-      if (identical(type, "numeric")) {
-        numericInput(ns("new_col_default"), "Default", value = 0)
-      } else if (identical(type, "logical")) {
-        checkboxInput(ns("new_col_default"), "Default", value = FALSE)
-      } else {
-        textInput(ns("new_col_default"), "Default", value = "")
-      }
-    })
-
-    # Add new column
-    observeEvent(input$add_col_btn, {
-      name <- input$new_col_name
-      type <- input$new_col_type
-      if (is.null(name) || !nzchar(name)) {
-        showNotification("Please provide a column name.", type = "warning"); return()
-      }
-      df <- working_data(); if (is.null(df)) df <- data_reactive(); req(df)
-      if (name %in% names(df)) {
-        showNotification("A column with that name already exists.", type = "error"); return()
-      }
-      n <- nrow(df)
-      # Fetch default value
-      def <- input$new_col_default
-      if (identical(type, "numeric")) {
-        def <- suppressWarnings(as.numeric(def)); if (is.na(def)) def <- NA_real_
-        df[[name]] <- rep(def, n)
-      } else if (identical(type, "logical")) {
-        def <- isTRUE(def)
-        df[[name]] <- rep(def, n)
-      } else {
-        df[[name]] <- rep(as.character(def %||% ""), n)
-      }
-      working_data(df)
-      showNotification(paste0("Column '", name, "' added."), type = "message")
-    })
-
-    # Types preview removed as requested
 
     # Return a list of reactives for downstream use
     return(list(

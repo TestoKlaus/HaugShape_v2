@@ -4,15 +4,15 @@
 \alias{coeff_split}
 \title{Converts a numerical description of harmonic coefficients to a named list.}
 \usage{
-coeff_split(cs, nb.h = 8, cph = 4)
+coeff_split(coe, cph = 4)
 }
 \arguments{
+\item{cph}{\code{numeric}. Must be set to 2 for \code{rfourier} and
+\code{tfourier} were used.}
+
 \item{cs}{A \code{vector} of harmonic coefficients.}
 
 \item{nb.h}{\code{numeric}. The maximum harmonic rank.}
-
-\item{cph}{\code{numeric}. Must be set to 2 for \code{rfourier} and
-\code{tfourier} were used.}
 }
 \value{
 Returns a named list of coordinates.

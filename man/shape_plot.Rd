@@ -14,6 +14,8 @@ shape_plot(
   features = list(),
   labels = list(),
   export_options = list(),
+  interactive = FALSE,
+  pca_model = NULL,
   verbose = TRUE
 )
 }
@@ -38,10 +40,16 @@ See Details for available options.}
 
 \item{export_options}{List containing export options. See Details for available options.}
 
+\item{interactive}{Logical indicating whether to enable interactive plotly mode. Default: FALSE.
+When TRUE, returns a plotly object with hover events. Requires plotly package.}
+
+\item{pca_model}{Optional PCA model list for interactive reconstruction. Only used when interactive = TRUE.
+If provided, enables real-time shape reconstruction on hover. Can be created with extract_pca_model().}
+
 \item{verbose}{Logical indicating whether to print progress messages. Default: TRUE.}
 }
 \value{
-A ggplot2 object representing the scatter plot.
+A ggplot2 object (default) or plotly object (when interactive = TRUE).
 }
 \description{
 Creates a highly customizable scatter plot with optional convex hulls, 
@@ -73,16 +81,21 @@ The `export_options` parameter accepts a list with the following options:
 \describe{
   \item{export}{Logical, whether to export the plot (default: FALSE)}
   \item{filename}{Base filename without extension}
-  \item{path}{Optional output directory}
-  \item{format}{Output format, e.g. "tiff" or "jpg"}
-  \item{dpi}{Resolution in dots per inch (default: 300)}
-  \item{width}{Optional width in inches}
-  \item{height}{Optional height in inches}
+  \item{path}{Optional output directory (if NULL, uses working directory)}
+  \item{format}{Output format: "rds", "svg", "tiff", or "png"}
+  \item{width}{Width in inches (optional for SVG, required for TIFF/PNG, ignored for RDS)}
+  \item{height}{Height in inches (optional for SVG, required for TIFF/PNG, ignored for RDS)}
+  \item{dpi}{Resolution in dots per inch for raster formats only (default: 300)}
 }
-Notes on export behavior:
-- Shapes and geometry will not be distorted: by default a fixed 1:1 aspect ratio is applied.
-- If only one of width/height is provided, the other is computed to preserve the aspect ratio.
-- If both are provided, the plot maintains its aspect ratio inside the image, adding padding as needed.
+Notes on export formats:
+- RDS: Saves the ggplot object for later editing in R
+- SVG: Vector format with base dimensions (scalable without quality loss)
+- TIFF/PNG: Raster formats requiring width, height, and DPI specifications
+
+When \code{interactive = TRUE}, the plot is converted to plotly for interactive exploration.
+If \code{pca_model} is also provided, hovering over the morphospace will show:
+- For data points: ID and existing shape (if available in data)
+- For empty space: Reconstructed hypothetical shape at those PC coordinates
 }
 \examples{
 # Basic scatter plot
