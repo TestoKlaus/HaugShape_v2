@@ -1,6 +1,9 @@
 # HaugShape v2 - Minimal Starting Point
 # Clean Shiny app with empty Data Import tab
 
+# Increase max upload file size to 50MB (for gap detection results)
+options(shiny.maxRequestSize = 50*1024^2)
+
 library(shiny)
 library(shinydashboard)
 library(DT)

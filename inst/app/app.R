@@ -4,6 +4,9 @@
 # It is bundled into the installed package so users can launch it via
 # HaugShapeV2::run_haug_app().
 
+# Increase max upload file size to 50MB (for gap detection results)
+options(shiny.maxRequestSize = 50*1024^2)
+
 library(shiny)
 library(shinydashboard)
 
