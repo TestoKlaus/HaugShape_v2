@@ -1,6 +1,9 @@
 # HaugShape v2 - Minimal Starting Point
 # Clean Shiny app with empty Data Import tab
 
+# Increase max upload file size to 50MB (for gap detection results)
+options(shiny.maxRequestSize = 50*1024^2)
+
 library(shiny)
 library(shinydashboard)
 library(DT)
@@ -21,7 +24,8 @@ ui <- dashboardPage(
       menuItem("1. Image Processing", tabName = "images", icon = icon("image")),
       menuItem("2. Shape Analysis", tabName = "shape", icon = icon("chart-area"),
         menuSubItem("Run Analysis", tabName = "shape"),
-        menuSubItem("Reconstruct Shapes", tabName = "reconstruct")
+        menuSubItem("Reconstruct Shapes", tabName = "reconstruct"),
+        menuSubItem("Gap Detection", tabName = "gap_detection")
       ),
       menuItem("3. Data Import", tabName = "import", icon = icon("upload")),
       menuItem("4. Plotting", tabName = "plotting", icon = icon("chart-line"))
@@ -55,6 +59,11 @@ ui <- dashboardPage(
       # Plotting Tab
       tabItem(tabName = "plotting",
         plotting_ui("plotting")
+      ),
+      
+      # Gap Detection Tab
+      tabItem(tabName = "gap_detection",
+        gap_detection_ui("gap_det")
       )
       
     )
@@ -85,6 +94,9 @@ server <- function(input, output, session) {
 
   # Initialize plotting module (uses data from Data Import)
   plotting_server("plotting", data_reactive = imported$data)
+  
+  # Initialize gap detection module
+  gap_detection_server("gap_det")
 }
 
 # Run the application

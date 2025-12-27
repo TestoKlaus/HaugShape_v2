@@ -55,7 +55,7 @@ shape_reconstruction_ui <- function(id) {
           
           actionButton(ns("reconstruct"), "Reconstruct Shape", class = "btn-success"),
           downloadButton(ns("download_coords"), "Download Coordinates (CSV)"),
-          downloadButton(ns("download_plot"), "Download Plot (PNG)"),
+          downloadButton(ns("download_plot"), "Download Plot (RDS)"),
           downloadButton(ns("download_jpg"), "Download Shape (JPG)")
         ),
         
@@ -93,7 +93,7 @@ shape_reconstruction_ui <- function(id) {
           hr(),
           
           plotOutput(ns("batch_plot"), height = 800),
-          downloadButton(ns("download_batch"), "Download Batch Grid (PNG)")
+          downloadButton(ns("download_batch"), "Download Batch Grid (RDS)")
         )
       )
     )
@@ -541,23 +541,36 @@ shape_reconstruction_server <- function(id) {
     # Download plot
     output$download_plot <- downloadHandler(
       filename = function() {
-        paste0("reconstructed_shape_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png")
+        paste0("reconstructed_shape_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".rds")
       },
       content = function(file) {
         shape_data <- reconstructed_shape()
         req(shape_data)
         
         coords <- shape_data$coords
+        coords_df <- as.data.frame(coords)
+        colnames(coords_df) <- c("x", "y")
         
-        png(file, width = 800, height = 800, res = 150, bg = "white")
-        plot(coords, type = "l", lwd = 2, col = "black", 
-             asp = 1, xlab = "", ylab = "", main = "Reconstructed Shape",
-             axes = FALSE, frame.plot = TRUE)
-        polygon(coords, col = "black", border = "black", lwd = 2)
+        # Create ggplot2 object
         score_type_label <- if (!is.null(shape_data$score_type) && shape_data$score_type == "absolute") "(absolute)" else "(SD)"
         pc_text <- paste(names(shape_data$pc_scores), "=", round(shape_data$pc_scores, 2), collapse = ", ")
-        mtext(paste(pc_text, score_type_label), side = 3, line = 0.5, cex = 0.8, col = "gray30")
-        dev.off()
+        subtitle_text <- paste(pc_text, score_type_label)
+        
+        p <- ggplot2::ggplot(coords_df, ggplot2::aes(x = x, y = y)) +
+          ggplot2::geom_polygon(fill = "black", color = "black", linewidth = 0.5) +
+          ggplot2::coord_fixed() +
+          ggplot2::labs(title = "Reconstructed Shape", subtitle = subtitle_text) +
+          ggplot2::theme_minimal() +
+          ggplot2::theme(
+            axis.title = ggplot2::element_blank(),
+            axis.text = ggplot2::element_blank(),
+            axis.ticks = ggplot2::element_blank(),
+            panel.grid = ggplot2::element_blank(),
+            panel.border = ggplot2::element_rect(color = "black", fill = NA, linewidth = 1),
+            plot.subtitle = ggplot2::element_text(color = "gray30", size = 10)
+          )
+        
+        saveRDS(p, file)
       }
     )
     
@@ -665,7 +678,7 @@ shape_reconstruction_server <- function(id) {
     # Download batch grid
     output$download_batch <- downloadHandler(
       filename = function() {
-        paste0("batch_reconstruction_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png")
+        paste0("batch_reconstruction_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".rds")
       },
       content = function(file) {
         batch_data <- batch_shapes()
@@ -673,25 +686,38 @@ shape_reconstruction_server <- function(id) {
         
         results <- batch_data$results
         pc_axis <- batch_data$pc_axis
-        n_shapes <- length(results)
         
-        ncols <- ceiling(sqrt(n_shapes))
-        nrows <- ceiling(n_shapes / ncols)
-        
-        png(file, width = 1600, height = 1600, res = 150)
-        par(mfrow = c(nrows, ncols), mar = c(2, 2, 2, 1))
-        
-        for (i in seq_along(results)) {
+        # Create list of ggplot objects
+        plot_list <- lapply(seq_along(results), function(i) {
           coords <- results[[i]]$coords
           pc_val <- results[[i]]$pc_score
+          coords_df <- as.data.frame(coords)
+          colnames(coords_df) <- c("x", "y")
           
-          plot(coords, type = "l", lwd = 1.5, col = "steelblue", 
-               asp = 1, xlab = "", ylab = "", 
-               main = sprintf("PC%d = %.2f", pc_axis, pc_val),
-               axes = FALSE, frame.plot = TRUE, cex.main = 0.9)
-          polygon(coords, col = rgb(0.25, 0.55, 0.75, 0.2), border = "steelblue", lwd = 1.5)
+          ggplot2::ggplot(coords_df, ggplot2::aes(x = x, y = y)) +
+            ggplot2::geom_polygon(fill = ggplot2::alpha("steelblue", 0.2), 
+                                 color = "steelblue", linewidth = 0.5) +
+            ggplot2::coord_fixed() +
+            ggplot2::labs(title = sprintf("PC%d = %.2f", pc_axis, pc_val)) +
+            ggplot2::theme_minimal() +
+            ggplot2::theme(
+              axis.title = ggplot2::element_blank(),
+              axis.text = ggplot2::element_blank(),
+              axis.ticks = ggplot2::element_blank(),
+              panel.grid = ggplot2::element_blank(),
+              panel.border = ggplot2::element_rect(color = "black", fill = NA, linewidth = 1),
+              plot.title = ggplot2::element_text(size = 9)
+            )
+        })
+        
+        # Combine plots using patchwork if available, otherwise save as list
+        if (requireNamespace("patchwork", quietly = TRUE)) {
+          combined_plot <- patchwork::wrap_plots(plot_list, ncol = ceiling(sqrt(length(plot_list))))
+          saveRDS(combined_plot, file)
+        } else {
+          # Save as list of plots if patchwork not available
+          saveRDS(plot_list, file)
         }
-        dev.off()
       }
     )
   })

@@ -37,7 +37,7 @@ Default: "shape".}
 }
 \value{
 A data frame with an additional shape column containing imported shapes
-  as Momocs Out objects or NULL for unmatched rows. Also includes attributes:
+  as Out objects or NULL for unmatched rows. Also includes attributes:
   \describe{
     \item{mapping_summary}{Summary of mapping results}
     \item{failed_imports}{List of files that failed to import}
@@ -45,7 +45,7 @@ A data frame with an additional shape column containing imported shapes
 }
 \description{
 Maps shape files (JPEG/JPG) from a directory to rows in a data frame based on
-ID matching. Shapes are imported using the Momocs package and added as a new
+ID matching. Shapes are imported using adapted Momocs code and added as a new
 column. Supports batch processing, validation, and comprehensive error handling.
 }
 \examples{
