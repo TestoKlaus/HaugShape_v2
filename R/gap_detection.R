@@ -931,9 +931,10 @@ detect_morphospace_gaps <- function(pca_scores,
     }
     
     # Calculate metrics for each gap polygon
+    threshold_value <- as.numeric(unname(threshold))
     metrics <- data.frame(
       gap_id = seq_len(nrow(gap_polys_sf)),
-      threshold = threshold,
+      threshold = rep(threshold_value, nrow(gap_polys_sf)),
       area = as.numeric(sf::st_area(gap_polys_sf)),
       stringsAsFactors = FALSE
     )
