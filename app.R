@@ -1,8 +1,11 @@
 # HaugShape v2 - Minimal Starting Point
 # Clean Shiny app with empty Data Import tab
 
-# Increase max upload file size to 50MB (for gap detection results)
-options(shiny.maxRequestSize = 50*1024^2)
+# Increase max upload file size (default 200MB) to support large RDS results.
+# Optional override: set env var HAUGSHAPE_MAX_UPLOAD_MB (integer/float).
+.haugshape_max_upload_mb <- suppressWarnings(as.numeric(Sys.getenv("HAUGSHAPE_MAX_UPLOAD_MB", "200")))
+if (is.na(.haugshape_max_upload_mb) || .haugshape_max_upload_mb <= 0) .haugshape_max_upload_mb <- 200
+options(shiny.maxRequestSize = .haugshape_max_upload_mb * 1024^2)
 
 library(shiny)
 library(shinydashboard)
