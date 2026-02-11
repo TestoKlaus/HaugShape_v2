@@ -148,7 +148,11 @@ gap_detection_ui <- function(id) {
                 choices = c("Alpha Hull (Concave)" = "alpha",
                            "Convex Hull" = "convex"),
                 selected = "alpha"
-              )
+              ),
+              br(),
+              h5("Group Filtering (optional)"),
+              uiOutput(ns("group_filter_ui")),
+              uiOutput(ns("domain_reference_ui"))
             )
           ),
           
@@ -518,6 +522,80 @@ gap_detection_server <- function(id, pca_data = NULL) {
       req(rv$pca_data)
       head(rv$pca_data, 3)
     })
+
+    # Group filter UI (column + values)
+    output$group_filter_ui <- renderUI({
+      if (is.null(rv$pca_data)) {
+        return(selectInput(session$ns("group_column"), "Group column", choices = c("None" = ""), selected = ""))
+      }
+
+      pc_cols <- grep("^PC[0-9]+$", colnames(rv$pca_data), value = TRUE)
+      candidate_cols <- setdiff(colnames(rv$pca_data), pc_cols)
+
+      if (length(candidate_cols) == 0) {
+        return(tagList(
+          selectInput(session$ns("group_column"), "Group column", choices = c("None" = ""), selected = ""),
+          helpText("No non-PC columns available for grouping.")
+        ))
+      }
+
+      selected_col <- input$group_column
+      if (is.null(selected_col)) selected_col <- ""
+
+      choices <- c("None" = "", stats::setNames(candidate_cols, candidate_cols))
+
+      # Build group values UI if a column is selected
+      group_values_ui <- NULL
+      if (nzchar(selected_col) && selected_col %in% colnames(rv$pca_data)) {
+        vals <- rv$pca_data[[selected_col]]
+        vals <- vals[!is.na(vals)]
+        vals_unique <- sort(unique(as.character(vals)))
+
+        group_values_ui <- shinyWidgets::pickerInput(
+          session$ns("group_values"),
+          "Groups to analyze",
+          choices = vals_unique,
+          selected = vals_unique,
+          multiple = TRUE,
+          options = list(
+            `actions-box` = TRUE,
+            `selected-text-format` = "count > 3",
+            `live-search` = TRUE
+          )
+        )
+      }
+
+      tagList(
+        selectInput(
+          session$ns("group_column"),
+          "Group column",
+          choices = choices,
+          selected = selected_col
+        ),
+        group_values_ui
+      )
+    })
+
+    # Domain reference UI (only relevant when grouping)
+    output$domain_reference_ui <- renderUI({
+      selected_col <- input$group_column
+      if (is.null(selected_col) || !nzchar(selected_col)) {
+        return(NULL)
+      }
+
+      tagList(
+        radioButtons(
+          session$ns("domain_reference"),
+          "Domain definition",
+          choices = c(
+            "Use morphospace of selected groups" = "subset",
+            "Use morphospace of full dataset" = "all"
+          ),
+          selected = "subset"
+        ),
+        helpText("Tip: choose 'full dataset' to compare groups in the same morphospace extent.")
+      )
+    })
     
     # PC selection UI - switches between automatic and manual modes
     output$pc_selection_ui <- renderUI({
@@ -732,6 +810,13 @@ gap_detection_server <- function(id, pca_data = NULL) {
             monte_carlo_iterations = input$monte_carlo_iterations,
             bootstrap_iterations = input$bootstrap_iterations,
             bootstrap_sample_size = bootstrap_sample_size,
+            group_column = if (!is.null(input$group_column) && nzchar(input$group_column)) input$group_column else NULL,
+            groups = if (!is.null(input$group_values) && length(input$group_values) > 0) input$group_values else NULL,
+            domain_reference = if (!is.null(input$group_column) && nzchar(input$group_column)) {
+              if (!is.null(input$domain_reference) && nzchar(input$domain_reference)) input$domain_reference else "subset"
+            } else {
+              "subset"
+            },
             certainty_thresholds = certainty_thresholds,
             pc_pairs = pc_pairs_to_analyze,  # NULL for automatic mode, custom matrix for manual
             max_pcs = if (is.null(pc_pairs_to_analyze)) input$max_pcs else NULL,
@@ -842,10 +927,24 @@ gap_detection_server <- function(id, pca_data = NULL) {
       
       n_pairs <- length(rv$gap_results$results)
       n_gaps <- nrow(rv$gap_results$summary_table)
+
+      group_info <- NULL
+      if (!is.null(rv$gap_results$parameters$group_column) && nzchar(rv$gap_results$parameters$group_column)) {
+        grp_col <- rv$gap_results$parameters$group_column
+        grp_vals <- rv$gap_results$parameters$groups
+        grp_txt <- if (is.null(grp_vals) || length(grp_vals) == 0) "(all non-NA)" else paste(grp_vals, collapse = ", ")
+        domain_ref <- rv$gap_results$parameters$domain_reference
+        group_info <- tagList(
+          p(sprintf("Group column: %s", grp_col)),
+          p(sprintf("Groups: %s", grp_txt)),
+          p(sprintf("Domain reference: %s", domain_ref))
+        )
+      }
       
       tagList(
         p(sprintf("Analyzed %d PC pairs", n_pairs)),
         p(sprintf("Detected %d gap regions", n_gaps)),
+        group_info,
         p(sprintf("Thresholds: %s", 
                  paste(rv$gap_results$parameters$certainty_thresholds, collapse = ", ")))
       )

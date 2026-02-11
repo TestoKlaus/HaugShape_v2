@@ -13,6 +13,16 @@ utils::globalVariables(c("x", "y", "certainty", "group"))
 #'   (e.g., 0.5 = 50% of data). Values > 1 are treated as absolute counts.
 #'   Useful for comparing datasets with different sample sizes by normalizing
 #'   to the smallest dataset size.
+#' @param group_column Optional column name in \\code{pca_scores} used to filter
+#'   specimens into groups for analysis. If NULL (default), uses all rows.
+#' @param groups Optional vector of group values to include (matched against
+#'   \\code{pca_scores[[group_column]]}). If NULL (default), includes all non-NA
+#'   values in the chosen group column.
+#' @param domain_reference Which data define the analysis domain (grid extent and
+#'   hull/bounding box) when group filtering is used. Use \\code{"subset"} to
+#'   compute the domain from the filtered data (default), or \\code{"all"} to
+#'   compute the domain from the full unfiltered dataset while still computing
+#'   occupancy/gaps from the filtered subset.
 #' @param certainty_thresholds Gap certainty thresholds for polygon extraction
 #' @param pc_pairs Optional matrix specifying PC pairs to analyze
 #' @param max_pcs Maximum PC to include in automatic pair generation
@@ -82,6 +92,9 @@ detect_morphospace_gaps <- function(pca_scores,
                                     monte_carlo_iterations = 100,
                                     bootstrap_iterations = 200,
                                     bootstrap_sample_size = NULL,
+                                    group_column = NULL,
+                                    groups = NULL,
+                                    domain_reference = c("subset", "all"),
                                     certainty_thresholds = c(0.80, 0.90, 0.95),
                                     pc_pairs = NULL,
                                     max_pcs = 4,
@@ -98,6 +111,7 @@ detect_morphospace_gaps <- function(pca_scores,
                                     verbose = TRUE) {
 
   domain_mode <- match.arg(domain_mode)
+  domain_reference <- match.arg(domain_reference)
   
   # Validate inputs
   if (!is.data.frame(pca_scores) && !is.matrix(pca_scores)) {
@@ -108,11 +122,42 @@ detect_morphospace_gaps <- function(pca_scores,
   if (is.matrix(pca_scores)) {
     pca_scores <- as.data.frame(pca_scores)
   }
+
+  # Keep a copy of the full dataset for optional domain definition
+  pca_scores_all <- pca_scores
   
   # Check for PC columns
   pc_cols <- grep("^PC[0-9]+$", colnames(pca_scores), value = TRUE)
   if (length(pc_cols) == 0) {
     stop("No columns matching pattern 'PC1', 'PC2', etc. found in pca_scores")
+  }
+
+  # Optional grouping filter (analysis points)
+  if (!is.null(group_column) && nzchar(group_column)) {
+    if (!group_column %in% colnames(pca_scores)) {
+      stop(sprintf("group_column '%s' not found in pca_scores", group_column))
+    }
+
+    group_values <- pca_scores[[group_column]]
+
+    if (!is.null(groups) && length(groups) > 0) {
+      keep <- !is.na(group_values) & (group_values %in% groups)
+    } else {
+      # If a group column is selected but no groups specified, keep all non-NA
+      keep <- !is.na(group_values)
+    }
+
+    pca_scores <- pca_scores[keep, , drop = FALSE]
+
+    if (nrow(pca_scores) < 3) {
+      stop("Group filtering resulted in fewer than 3 specimens; cannot run gap analysis")
+    }
+
+    if (verbose) {
+      n_groups <- if (!is.null(groups) && length(groups) > 0) length(unique(groups)) else length(unique(group_values[!is.na(group_values)]))
+      cat(sprintf("Filtering by group_column '%s': %d rows retained (%d group level(s))\n",
+                  group_column, nrow(pca_scores), n_groups))
+    }
   }
   
   # Extract numeric PC indices
@@ -220,6 +265,9 @@ detect_morphospace_gaps <- function(pca_scores,
     bootstrap_iterations = bootstrap_iterations,
     bootstrap_sample_size = bootstrap_sample_size,
     bootstrap_actual_size = actual_sample_size,
+    group_column = group_column,
+    groups = groups,
+    domain_reference = domain_reference,
     certainty_thresholds = certainty_thresholds,
     domain_mode = domain_mode,
     hull_type = hull_type,
@@ -267,6 +315,14 @@ detect_morphospace_gaps <- function(pca_scores,
     points <- pca_scores[, c(col_x, col_y)]
     colnames(points) <- c("x", "y")
     points <- na.omit(points)
+
+    domain_points <- if (identical(domain_reference, "all")) {
+      dp <- pca_scores_all[, c(col_x, col_y)]
+      colnames(dp) <- c("x", "y")
+      na.omit(dp)
+    } else {
+      points
+    }
     
     if (nrow(points) < 3) {
       warning(sprintf("Insufficient points for %s. Skipping.", pair_name))
@@ -276,6 +332,7 @@ detect_morphospace_gaps <- function(pca_scores,
     # Analyze this PC pair
     pair_result <- .analyze_pc_pair(
       points = points,
+      domain_points = domain_points,
       uncertainty = uncertainty,
       grid_resolution = grid_resolution,
       monte_carlo_iterations = monte_carlo_iterations,
@@ -346,6 +403,7 @@ detect_morphospace_gaps <- function(pca_scores,
 #'
 #' @keywords internal
 .analyze_pc_pair <- function(points,
+                             domain_points = NULL,
                              uncertainty,
                              grid_resolution,
                              monte_carlo_iterations,
@@ -364,10 +422,12 @@ detect_morphospace_gaps <- function(pca_scores,
                              verbose) {
   
   n_points <- nrow(points)
-  
-  # Calculate axis ranges and uncertainty radii
-  x_range <- range(points$x)
-  y_range <- range(points$y)
+  domain_pts <- if (is.null(domain_points)) points else domain_points
+  n_domain_points <- nrow(domain_pts)
+
+  # Calculate axis ranges and uncertainty radii based on the analysis domain
+  x_range <- range(domain_pts$x)
+  y_range <- range(domain_pts$y)
   
   x_span <- diff(x_range)
   y_span <- diff(y_range)
@@ -376,8 +436,8 @@ detect_morphospace_gaps <- function(pca_scores,
   u_y <- uncertainty * y_span
   
   if (verbose) {
-    cat(sprintf("  Points: %d | X range: [%.3f, %.3f] | Y range: [%.3f, %.3f]\n",
-                n_points, x_range[1], x_range[2], y_range[1], y_range[2]))
+    cat(sprintf("  Points: %d (domain: %d) | X range: [%.3f, %.3f] | Y range: [%.3f, %.3f]\n",
+                n_points, n_domain_points, x_range[1], x_range[2], y_range[1], y_range[2]))
     cat(sprintf("  Uncertainty: ±%.3f (X), ±%.3f (Y)\n", u_x, u_y))
   }
   
@@ -399,7 +459,7 @@ detect_morphospace_gaps <- function(pca_scores,
   if (domain_mode == "hull") {
     # Create analysis domain hull
     domain_hull <- .create_domain_hull(
-      points = points,
+      points = domain_pts,
       hull_type = hull_type,
       alpha_value = alpha_value,
       buffer = hull_buffer,

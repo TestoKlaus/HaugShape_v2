@@ -11,6 +11,9 @@ detect_morphospace_gaps(
   monte_carlo_iterations = 100,
   bootstrap_iterations = 200,
   bootstrap_sample_size = NULL,
+  group_column = NULL,
+  groups = NULL,
+  domain_reference = c("subset", "all"),
   certainty_thresholds = c(0.8, 0.9, 0.95),
   pc_pairs = NULL,
   max_pcs = 4,
@@ -43,6 +46,19 @@ If NULL (default), uses full dataset. Values <= 1 are treated as fractions
 (e.g., 0.5 = 50% of data). Values > 1 are treated as absolute counts.
 Useful for comparing datasets with different sample sizes by normalizing
 to the smallest dataset size.}
+
+\item{group_column}{Optional column name in \code{pca_scores} used to filter
+specimens into groups for analysis. If NULL (default), uses all rows.}
+
+\item{groups}{Optional vector of group values to include (matched against
+\code{pca_scores[[group_column]]}). If NULL (default), includes all non-NA
+values in the chosen group column.}
+
+\item{domain_reference}{Which data define the analysis domain (grid extent and
+hull/bounding box) when group filtering is used. Use \code{"subset"} to
+compute the domain from the filtered data (default), or \code{"all"} to
+compute the domain from the full unfiltered dataset while still computing
+occupancy/gaps from the filtered subset.}
 
 \item{certainty_thresholds}{Gap certainty thresholds for polygon extraction}
 

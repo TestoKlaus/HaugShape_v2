@@ -213,6 +213,35 @@ image(pc1_pc2$gap_certainty,
       xlab = "PC1", ylab = "PC2")
 ```
 
+## Group-Specific Gap Analysis (Optional)
+
+If your PCA scores include a grouping column (e.g., time period, clade, locality),
+you can run the gap analysis on selected groups.
+
+Use \`domain_reference\` to control how the analysis domain is defined:
+
+- \`domain_reference = "subset"\`: domain (grid + hull/bounding box) is computed from the selected groups (default).
+- \`domain_reference = "all"\`: domain is computed from the full dataset, while occupancy/gaps are computed from the selected groups.
+  This is useful when you want to compare different groups in the same available morphospace.
+
+```r
+library(HaugShapeV2)
+
+# pca_data must contain PC1, PC2, ... and a grouping column, e.g. "Group"
+
+# Analyze only Group A, but keep the domain from the full dataset
+gaps_A <- detect_morphospace_gaps(
+  pca_scores = pca_data,
+  group_column = "Group",
+  groups = "A",
+  domain_reference = "all",
+  domain_mode = "full",
+  max_pcs = 4
+)
+
+print(gaps_A)
+```
+
 ## Comparing Datasets with Different Sample Sizes
 
 When comparing gap patterns across groups with unequal sample sizes, use bootstrap subsampling to normalize:

@@ -66,6 +66,91 @@ test_basic_gap_detection <- function() {
 }
 
 # ============================================================================
+# Test 1b: Group Filtering + Full-Domain Reference
+# ============================================================================
+
+test_group_domain_reference <- function() {
+  cat("\n=== Test 1b: Group Filtering + Domain Reference ===\n")
+
+  set.seed(42)
+
+  # Full dataset covers a wider morphospace than Group A alone
+  group_a <- data.frame(
+    PC1 = rnorm(60, mean = -1, sd = 0.4),
+    PC2 = rnorm(60, mean = 0, sd = 0.4),
+    Group = "A"
+  )
+  group_b <- data.frame(
+    PC1 = rnorm(40, mean = 3, sd = 0.6),
+    PC2 = rnorm(40, mean = 2, sd = 0.6),
+    Group = "B"
+  )
+  pca_scores <- rbind(group_a, group_b)
+
+  common_args <- list(
+    uncertainty = 0.05,
+    grid_resolution = 50,
+    monte_carlo_iterations = 20,
+    bootstrap_iterations = 10,
+    certainty_thresholds = c(0.8),
+    max_pcs = 2,
+    domain_mode = "full",
+    hull_buffer = 0.05,
+    hull_type = "convex",
+    verbose = FALSE
+  )
+
+  # Baseline: full dataset defines the domain
+  full_domain <- do.call(detect_morphospace_gaps, c(list(pca_scores = pca_scores), common_args))
+
+  # Subset analysis but domain derived from all data
+  group_a_all_domain <- do.call(
+    detect_morphospace_gaps,
+    c(
+      list(
+        pca_scores = pca_scores,
+        group_column = "Group",
+        groups = "A",
+        domain_reference = "all"
+      ),
+      common_args
+    )
+  )
+
+  # Subset analysis with domain derived only from subset
+  group_a_subset_domain <- do.call(
+    detect_morphospace_gaps,
+    c(
+      list(
+        pca_scores = pca_scores,
+        group_column = "Group",
+        groups = "A",
+        domain_reference = "subset"
+      ),
+      common_args
+    )
+  )
+
+  gx_full <- full_domain$results$`PC1-PC2`$grid_x
+  gy_full <- full_domain$results$`PC1-PC2`$grid_y
+  gx_a_all <- group_a_all_domain$results$`PC1-PC2`$grid_x
+  gy_a_all <- group_a_all_domain$results$`PC1-PC2`$grid_y
+
+  if (isTRUE(all.equal(gx_full, gx_a_all)) && isTRUE(all.equal(gy_full, gy_a_all))) {
+    cat("✓ SUCCESS: Group A analysis uses full-dataset domain when domain_reference='all'\n")
+  } else {
+    cat("✗ WARNING: Domain grids differ; check domain_reference implementation\n")
+  }
+
+  gx_a_subset <- group_a_subset_domain$results$`PC1-PC2`$grid_x
+  if (!isTRUE(all.equal(gx_full, gx_a_subset))) {
+    cat("✓ SUCCESS: domain_reference='subset' produces a different domain (as expected)\n")
+  }
+
+  invisible(list(full = full_domain, a_all = group_a_all_domain, a_subset = group_a_subset_domain))
+}
+
+# ============================================================================
 # Test 2: Export and Import Gap Results
 # ============================================================================
 
@@ -156,6 +241,9 @@ run_all_tests <- function() {
   
   # Test 1
   gaps <- test_basic_gap_detection()
+
+  # Test 1b
+  test_group_domain_reference()
   
   # Test 2
   if (!is.null(gaps)) {

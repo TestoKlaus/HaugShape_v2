@@ -36,6 +36,9 @@ detect_morphospace_gaps(
   monte_carlo_iterations = 100,  # Monte Carlo replicates
   bootstrap_iterations = 200,    # Bootstrap resamples
   bootstrap_sample_size = NULL,  # Optional: subsample size for bootstrap (NULL = full dataset)
+  group_column = NULL,           # Optional: column name to filter groups (e.g., "Group")
+  groups = NULL,                 # Optional: which group values to include
+  domain_reference = "subset",   # "subset" (default) or "all" (domain from full dataset)
   certainty_thresholds = c(0.80, 0.90, 0.95),
   max_pcs = 4,                   # Analyze PC1-PC4
   hull_type = "alpha",           # Concave alpha hull
@@ -74,6 +77,8 @@ morphospace_gaps object:
   - Hull type (alpha/convex)
   - Uncertainty model (Gaussian/uniform)
   - Occupancy method (radius/KDE)
+  - Optional group filtering (select a group column + group values)
+  - Option to define domain from selected groups vs full dataset
   - Three configurable certainty thresholds
   - Optional parallel processing
   
