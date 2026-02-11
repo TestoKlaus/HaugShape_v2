@@ -16,6 +16,9 @@ utils::globalVariables(c("x", "y", "certainty", "group"))
 #' @param certainty_thresholds Gap certainty thresholds for polygon extraction
 #' @param pc_pairs Optional matrix specifying PC pairs to analyze
 #' @param max_pcs Maximum PC to include in automatic pair generation
+#' @param domain_mode Analysis domain. Use "hull" to constrain analysis to the
+#'   (alpha/convex) hull of the observed points, or "full" to analyze the full
+#'   rectangular morphospace defined by the (buffered) PC axis ranges.
 #' @param hull_type Type of hull for domain constraint
 #' @param alpha_value Alpha parameter for alphahull
 #' @param hull_buffer Proportional buffer to add around hull
@@ -82,6 +85,7 @@ detect_morphospace_gaps <- function(pca_scores,
                                     certainty_thresholds = c(0.80, 0.90, 0.95),
                                     pc_pairs = NULL,
                                     max_pcs = 4,
+                                    domain_mode = c("hull", "full"),
                                     hull_type = "alpha",
                                     alpha_value = NULL,
                                     hull_buffer = 0.05,
@@ -92,6 +96,8 @@ detect_morphospace_gaps <- function(pca_scores,
                                     occupancy_radius = 1.5,
                                     progress_callback = NULL,
                                     verbose = TRUE) {
+
+  domain_mode <- match.arg(domain_mode)
   
   # Validate inputs
   if (!is.data.frame(pca_scores) && !is.matrix(pca_scores)) {
@@ -147,7 +153,7 @@ detect_morphospace_gaps <- function(pca_scores,
   }
   
   # Check required packages
-  if (hull_type == "alpha") {
+  if (domain_mode == "hull" && hull_type == "alpha") {
     if (!requireNamespace("alphahull", quietly = TRUE)) {
       warning("Package 'alphahull' not available. Falling back to convex hull.")
       hull_type <- "convex"
@@ -215,6 +221,7 @@ detect_morphospace_gaps <- function(pca_scores,
     bootstrap_sample_size = bootstrap_sample_size,
     bootstrap_actual_size = actual_sample_size,
     certainty_thresholds = certainty_thresholds,
+    domain_mode = domain_mode,
     hull_type = hull_type,
     alpha_value = alpha_value,
     hull_buffer = hull_buffer,
@@ -275,6 +282,7 @@ detect_morphospace_gaps <- function(pca_scores,
       bootstrap_iterations = bootstrap_iterations,
       bootstrap_sample_size = bootstrap_sample_size,
       certainty_thresholds = certainty_thresholds,
+      domain_mode = domain_mode,
       hull_type = hull_type,
       alpha_value = alpha_value,
       hull_buffer = hull_buffer,
@@ -344,6 +352,7 @@ detect_morphospace_gaps <- function(pca_scores,
                              bootstrap_iterations,
                              bootstrap_sample_size = NULL,
                              certainty_thresholds,
+                             domain_mode,
                              hull_type,
                              alpha_value,
                              hull_buffer,
@@ -372,15 +381,6 @@ detect_morphospace_gaps <- function(pca_scores,
     cat(sprintf("  Uncertainty: ±%.3f (X), ±%.3f (Y)\n", u_x, u_y))
   }
   
-  # Create analysis domain hull
-  domain_hull <- .create_domain_hull(
-    points = points,
-    hull_type = hull_type,
-    alpha_value = alpha_value,
-    buffer = hull_buffer,
-    verbose = verbose
-  )
-  
   # Create regular grid
   grid_obj <- .create_analysis_grid(
     x_range = x_range,
@@ -392,11 +392,43 @@ detect_morphospace_gaps <- function(pca_scores,
   grid_x <- grid_obj$grid_x
   grid_y <- grid_obj$grid_y
   cell_size <- grid_obj$cell_size
-  
-  # Filter grid cells within domain
-  grid_centers <- expand.grid(x = grid_x, y = grid_y)
-  grid_sf <- sf::st_as_sf(grid_centers, coords = c("x", "y"), crs = sf::st_crs(domain_hull))
-  in_domain <- as.vector(sf::st_within(grid_sf, domain_hull, sparse = FALSE))
+
+  # Define analysis domain and mask
+  domain_mode <- match.arg(domain_mode, c("hull", "full"))
+
+  if (domain_mode == "hull") {
+    # Create analysis domain hull
+    domain_hull <- .create_domain_hull(
+      points = points,
+      hull_type = hull_type,
+      alpha_value = alpha_value,
+      buffer = hull_buffer,
+      verbose = verbose
+    )
+
+    # Filter grid cells within domain
+    grid_centers <- expand.grid(x = grid_x, y = grid_y)
+    grid_sf <- sf::st_as_sf(grid_centers, coords = c("x", "y"), crs = sf::st_crs(domain_hull))
+    in_domain <- as.vector(sf::st_within(grid_sf, domain_hull, sparse = FALSE))
+  } else {
+    # Full morphospace: use the grid's rectangular extent as the domain
+    xlim <- range(grid_x)
+    ylim <- range(grid_y)
+    bbox_coords <- matrix(
+      c(
+        xlim[1], ylim[1],
+        xlim[2], ylim[1],
+        xlim[2], ylim[2],
+        xlim[1], ylim[2],
+        xlim[1], ylim[1]
+      ),
+      ncol = 2,
+      byrow = TRUE
+    )
+    bbox_poly <- sf::st_polygon(list(bbox_coords))
+    domain_hull <- sf::st_sf(geometry = sf::st_sfc(bbox_poly), crs = NA)
+    in_domain <- rep(TRUE, length(grid_x) * length(grid_y))
+  }
   
   if (verbose) {
     cat(sprintf("  Grid: %d × %d = %d cells (%d within domain)\n",

@@ -14,6 +14,7 @@ detect_morphospace_gaps(
   certainty_thresholds = c(0.8, 0.9, 0.95),
   pc_pairs = NULL,
   max_pcs = 4,
+  domain_mode = c("hull", "full"),
   hull_type = "alpha",
   alpha_value = NULL,
   hull_buffer = 0.05,
@@ -48,6 +49,10 @@ to the smallest dataset size.}
 \item{pc_pairs}{Optional matrix specifying PC pairs to analyze}
 
 \item{max_pcs}{Maximum PC to include in automatic pair generation}
+
+\item{domain_mode}{Analysis domain. Use "hull" to constrain analysis to the
+(alpha/convex) hull of the observed points, or "full" to analyze the full
+rectangular morphospace defined by the (buffered) PC axis ranges.}
 
 \item{hull_type}{Type of hull for domain constraint}
 

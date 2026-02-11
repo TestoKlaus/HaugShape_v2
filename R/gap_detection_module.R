@@ -131,6 +131,16 @@ gap_detection_ui <- function(id) {
               ),
               
               uiOutput(ns("pc_selection_ui")),
+
+              selectInput(
+                ns("domain_mode"),
+                "Analysis Domain",
+                choices = c(
+                  "Constrain to hull" = "hull",
+                  "Full morphospace (bounding box)" = "full"
+                ),
+                selected = "hull"
+              ),
               
               selectInput(
                 ns("hull_type"),
@@ -725,6 +735,7 @@ gap_detection_server <- function(id, pca_data = NULL) {
             certainty_thresholds = certainty_thresholds,
             pc_pairs = pc_pairs_to_analyze,  # NULL for automatic mode, custom matrix for manual
             max_pcs = if (is.null(pc_pairs_to_analyze)) input$max_pcs else NULL,
+            domain_mode = input$domain_mode,
             hull_type = input$hull_type,
             hull_buffer = input$hull_buffer / 100,
             uncertainty_type = input$uncertainty_type,
