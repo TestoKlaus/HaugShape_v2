@@ -1090,6 +1090,16 @@ detect_morphospace_gaps <- function(pca_scores,
     }
   }
 
+  report_batch_start <- function(start_idx, end_idx) {
+    if (isTRUE(verbose)) {
+      cat(sprintf("    Running bootstraps %d-%d/%d\n", start_idx, end_idx, bootstrap_iterations))
+      flush.console()
+    }
+    if (!is.null(progress_callback) && is.function(progress_callback)) {
+      progress_callback(sprintf("Running bootstraps %d-%d/%d", start_idx, end_idx, bootstrap_iterations), 0)
+    }
+  }
+
   if (isTRUE(use_parallel) && requireNamespace("parallel", quietly = TRUE)) {
     if (is.null(n_cores) || !is.finite(n_cores) || n_cores < 1) {
       n_cores <- max(1, parallel::detectCores() - 1)
@@ -1113,6 +1123,8 @@ detect_morphospace_gaps <- function(pca_scores,
     for (start_idx in batch_starts) {
       end_idx <- min(bootstrap_iterations, start_idx + progress_every - 1L)
       batch <- start_idx:end_idx
+
+      report_batch_start(start_idx, end_idx)
 
       gap_prob_list <- parallel::parLapply(cl, batch, function(b) {
         boot_points <- points[boot_indices_list[[b]], , drop = FALSE]
@@ -1146,6 +1158,8 @@ detect_morphospace_gaps <- function(pca_scores,
     for (start_idx in batch_starts) {
       end_idx <- min(bootstrap_iterations, start_idx + progress_every - 1L)
       batch <- start_idx:end_idx
+
+      report_batch_start(start_idx, end_idx)
 
       for (b in batch) {
         boot_points <- points[boot_indices_list[[b]], , drop = FALSE]
