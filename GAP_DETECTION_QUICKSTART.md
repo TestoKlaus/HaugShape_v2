@@ -194,6 +194,7 @@ gaps <- detect_morphospace_gaps(
   grid_resolution = 150,
   monte_carlo_iterations = 100,
   bootstrap_iterations = 200,
+  estimation_method = "bootstrap_mc",
   max_pcs = 4
 )
 
@@ -240,6 +241,16 @@ gaps_A <- detect_morphospace_gaps(
 )
 
 print(gaps_A)
+```
+
+To reproduce the older two-stage behavior, set:
+
+```r
+gaps_legacy <- detect_morphospace_gaps(
+  pca_scores = pca_data,
+  estimation_method = "two_stage",
+  max_pcs = 4
+)
 ```
 
 ## Comparing Datasets with Different Sample Sizes

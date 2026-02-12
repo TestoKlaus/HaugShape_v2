@@ -7,6 +7,9 @@ utils::globalVariables(c("x", "y", "certainty", "group"))
 #' @param uncertainty Proportion of axis range for uncertainty radius
 #' @param grid_resolution Number of grid cells along each axis
 #' @param monte_carlo_iterations Number of Monte Carlo replicates
+#' @param monte_carlo_iterations_bootstrap Optional number of Monte Carlo
+#'   replicates to use within each bootstrap replicate. If NULL (default), a
+#'   runtime-friendly value is chosen (currently \\code{max(50, monte_carlo_iterations/2)}).
 #' @param bootstrap_iterations Number of bootstrap resamples
 #' @param bootstrap_sample_size Optional subsample size for bootstrap iterations.
 #'   If NULL (default), uses full dataset. Values <= 1 are treated as fractions
@@ -23,6 +26,12 @@ utils::globalVariables(c("x", "y", "certainty", "group"))
 #'   compute the domain from the filtered data (default), or \\code{"all"} to
 #'   compute the domain from the full unfiltered dataset while still computing
 #'   occupancy/gaps from the filtered subset.
+#' @param estimation_method Estimation strategy. \\code{"bootstrap_mc"} (default)
+#'   integrates sampling and measurement uncertainty by running Monte Carlo
+#'   perturbations within each bootstrap replicate and averaging gap probability
+#'   across bootstraps. \\code{"two_stage"} uses the legacy two-step approach
+#'   (Monte Carlo on full data, then bootstrap-based stability) for backward
+#'   comparability.
 #' @param certainty_thresholds Gap certainty thresholds for polygon extraction
 #' @param pc_pairs Optional matrix specifying PC pairs to analyze
 #' @param max_pcs Maximum PC to include in automatic pair generation
@@ -44,26 +53,15 @@ utils::globalVariables(c("x", "y", "certainty", "group"))
 #' @export
 #'
 #' @details
-#' The function implements a rigorous two-stage uncertainty analysis:
+#' The default method (\\code{estimation_method = "bootstrap_mc"}) integrates
+#' measurement and sampling uncertainty in a single procedure:
+#' the dataset is resampled (with replacement) B times and for each resample a
+#' Monte Carlo perturbation procedure is run. The resulting per-cell gap
+#' probability matrices are averaged across bootstrap replicates.
 #'
-#' \strong{Stage 1: Measurement Uncertainty (Monte Carlo)}
-#' Each observed point is treated as uncertain within ±u (uncertainty * axis range).
-#' For each Monte Carlo iteration, points are perturbed according to the
-#' uncertainty model (Gaussian or uniform). Grid cells are marked as occupied
-#' if any perturbed point falls within the occupancy radius. The gap probability
-#' for each cell is the proportion of iterations where it remains unoccupied.
-#'
-#' \strong{Stage 2: Sampling Uncertainty (Bootstrap)}
-#' To assess whether gaps are artifacts of limited sampling, the dataset is
-#' resampled (with replacement) B times. For each resample, the Monte Carlo
-#' procedure is repeated and a binary gap mask is created. The gap stability
-#' for each cell is the proportion of bootstrap iterations where it was
-#' classified as a gap.
-#'
-#' \strong{Combined Certainty}
-#' gap_certainty = gap_probability * gap_stability
-#' This represents the probability that a region is genuinely unoccupied,
-#' accounting for both measurement and sampling uncertainty.
+#' The legacy method (\\code{estimation_method = "two_stage"}) retains the older
+#' two-step computation (full-data Monte Carlo + bootstrap-based stability) and
+#' combines them as \\code{gap_certainty = gap_probability * gap_stability}.
 #'
 #' @examples
 #' \dontrun{
@@ -90,11 +88,13 @@ detect_morphospace_gaps <- function(pca_scores,
                                     uncertainty = 0.05,
                                     grid_resolution = 150,
                                     monte_carlo_iterations = 100,
+                                    monte_carlo_iterations_bootstrap = NULL,
                                     bootstrap_iterations = 200,
                                     bootstrap_sample_size = NULL,
                                     group_column = NULL,
                                     groups = NULL,
                                     domain_reference = c("subset", "all"),
+                                    estimation_method = c("bootstrap_mc", "two_stage"),
                                     certainty_thresholds = c(0.80, 0.90, 0.95),
                                     pc_pairs = NULL,
                                     max_pcs = 4,
@@ -112,6 +112,7 @@ detect_morphospace_gaps <- function(pca_scores,
 
   domain_mode <- match.arg(domain_mode)
   domain_reference <- match.arg(domain_reference)
+  estimation_method <- match.arg(estimation_method)
   
   # Validate inputs
   if (!is.data.frame(pca_scores) && !is.matrix(pca_scores)) {
@@ -262,12 +263,14 @@ detect_morphospace_gaps <- function(pca_scores,
     uncertainty = uncertainty,
     grid_resolution = grid_resolution,
     monte_carlo_iterations = monte_carlo_iterations,
+    monte_carlo_iterations_bootstrap = monte_carlo_iterations_bootstrap,
     bootstrap_iterations = bootstrap_iterations,
     bootstrap_sample_size = bootstrap_sample_size,
     bootstrap_actual_size = actual_sample_size,
     group_column = group_column,
     groups = groups,
     domain_reference = domain_reference,
+    estimation_method = estimation_method,
     certainty_thresholds = certainty_thresholds,
     domain_mode = domain_mode,
     hull_type = hull_type,
@@ -300,7 +303,7 @@ detect_morphospace_gaps <- function(pca_scores,
       
     if (!is.null(progress_callback)) {
       progress_callback(
-        sprintf("PC%d-PC%d (%d/%d): Monte Carlo + Bootstrap", 
+        sprintf("PC%d-PC%d (%d/%d): Gap estimation", 
                 pc_x, pc_y, i, nrow(pc_pairs)),
         0.8 / nrow(pc_pairs)
       )
@@ -336,6 +339,7 @@ detect_morphospace_gaps <- function(pca_scores,
       uncertainty = uncertainty,
       grid_resolution = grid_resolution,
       monte_carlo_iterations = monte_carlo_iterations,
+      monte_carlo_iterations_bootstrap = monte_carlo_iterations_bootstrap,
       bootstrap_iterations = bootstrap_iterations,
       bootstrap_sample_size = bootstrap_sample_size,
       certainty_thresholds = certainty_thresholds,
@@ -348,7 +352,8 @@ detect_morphospace_gaps <- function(pca_scores,
       occupancy_radius = occupancy_radius,
       use_parallel = use_parallel,
       n_cores = n_cores,
-      verbose = verbose
+      verbose = verbose,
+      estimation_method = estimation_method
     )
     
     # Store results
@@ -407,6 +412,7 @@ detect_morphospace_gaps <- function(pca_scores,
                              uncertainty,
                              grid_resolution,
                              monte_carlo_iterations,
+                             monte_carlo_iterations_bootstrap = NULL,
                              bootstrap_iterations,
                              bootstrap_sample_size = NULL,
                              certainty_thresholds,
@@ -419,7 +425,10 @@ detect_morphospace_gaps <- function(pca_scores,
                              occupancy_radius,
                              use_parallel,
                              n_cores,
-                             verbose) {
+                             verbose,
+                             estimation_method = c("bootstrap_mc", "two_stage")) {
+
+  estimation_method <- match.arg(estimation_method)
   
   n_points <- nrow(points)
   domain_pts <- if (is.null(domain_points)) points else domain_points
@@ -496,54 +505,97 @@ detect_morphospace_gaps <- function(pca_scores,
                 length(grid_x) * length(grid_y), sum(in_domain)))
   }
   
-  # Stage 1: Monte Carlo simulation for measurement uncertainty
-  if (verbose) {
-    cat(sprintf("  Stage 1: Monte Carlo simulation (%d iterations)\n", 
-                monte_carlo_iterations))
+  if (identical(estimation_method, "two_stage")) {
+    # Legacy two-stage method
+    if (verbose) {
+      cat(sprintf("  Stage 1: Monte Carlo simulation (%d iterations)\n",
+                  monte_carlo_iterations))
+    }
+
+    gap_probability <- .compute_gap_probability(
+      points = points,
+      grid_x = grid_x,
+      grid_y = grid_y,
+      u_x = u_x,
+      u_y = u_y,
+      in_domain = in_domain,
+      monte_carlo_iterations = monte_carlo_iterations,
+      uncertainty_type = uncertainty_type,
+      occupancy_method = occupancy_method,
+      occupancy_radius = occupancy_radius,
+      cell_size = cell_size,
+      use_parallel = use_parallel,
+      n_cores = n_cores
+    )
+
+    if (verbose) {
+      cat(sprintf("  Stage 2: Bootstrap resampling (%d iterations)\n",
+                  bootstrap_iterations))
+    }
+
+    gap_stability <- .compute_gap_stability(
+      points = points,
+      grid_x = grid_x,
+      grid_y = grid_y,
+      u_x = u_x,
+      u_y = u_y,
+      in_domain = in_domain,
+      bootstrap_iterations = bootstrap_iterations,
+      bootstrap_sample_size = bootstrap_sample_size,
+      monte_carlo_iterations = monte_carlo_iterations,
+      monte_carlo_iterations_bootstrap = monte_carlo_iterations_bootstrap,
+      uncertainty_type = uncertainty_type,
+      occupancy_method = occupancy_method,
+      occupancy_radius = occupancy_radius,
+      cell_size = cell_size,
+      use_parallel = use_parallel,
+      n_cores = n_cores
+    )
+
+    gap_certainty <- gap_probability * gap_stability
+
+  } else {
+    # Unified bootstrap + Monte Carlo method (sampling + measurement uncertainty)
+    if (verbose) {
+      cat(sprintf("  Unified Bootstrap + Monte Carlo (%d bootstraps)\n", bootstrap_iterations))
+    }
+
+    mc_iter_boot <- if (is.null(monte_carlo_iterations_bootstrap)) {
+      # Keep runtime comparable to legacy defaults (where bootstrap used ~50 when MC=100)
+      max(50, monte_carlo_iterations %/% 2)
+    } else {
+      as.integer(monte_carlo_iterations_bootstrap)
+    }
+    if (!is.finite(mc_iter_boot) || mc_iter_boot < 1) {
+      stop("monte_carlo_iterations_bootstrap must be a positive integer")
+    }
+
+    if (verbose) {
+      cat(sprintf("    Per-bootstrap MC iterations: %d\n", mc_iter_boot))
+    }
+
+    gap_probability <- .compute_gap_probability_bootstrap_mc(
+      points = points,
+      grid_x = grid_x,
+      grid_y = grid_y,
+      u_x = u_x,
+      u_y = u_y,
+      in_domain = in_domain,
+      bootstrap_iterations = bootstrap_iterations,
+      bootstrap_sample_size = bootstrap_sample_size,
+      monte_carlo_iterations = mc_iter_boot,
+      uncertainty_type = uncertainty_type,
+      occupancy_method = occupancy_method,
+      occupancy_radius = occupancy_radius,
+      cell_size = cell_size,
+      use_parallel = use_parallel,
+      n_cores = n_cores
+    )
+
+    # Stability is not used in the unified estimator
+    gap_stability <- NULL
+    gap_certainty <- gap_probability
   }
-  
-  gap_probability <- .compute_gap_probability(
-    points = points,
-    grid_x = grid_x,
-    grid_y = grid_y,
-    u_x = u_x,
-    u_y = u_y,
-    in_domain = in_domain,
-    monte_carlo_iterations = monte_carlo_iterations,
-    uncertainty_type = uncertainty_type,
-    occupancy_method = occupancy_method,
-    occupancy_radius = occupancy_radius,
-    cell_size = cell_size,
-    use_parallel = use_parallel,
-    n_cores = n_cores
-  )
-  
-  # Stage 2: Bootstrap for sampling uncertainty
-  if (verbose) {
-    cat(sprintf("  Stage 2: Bootstrap resampling (%d iterations)\n", 
-                bootstrap_iterations))
-  }
-  
-  gap_stability <- .compute_gap_stability(
-    points = points,
-    grid_x = grid_x,
-    grid_y = grid_y,
-    u_x = u_x,
-    u_y = u_y,
-    in_domain = in_domain,
-    bootstrap_iterations = bootstrap_iterations,
-    bootstrap_sample_size = bootstrap_sample_size,
-    monte_carlo_iterations = monte_carlo_iterations,
-    uncertainty_type = uncertainty_type,
-    occupancy_method = occupancy_method,
-    occupancy_radius = occupancy_radius,
-    cell_size = cell_size,
-    use_parallel = use_parallel,
-    n_cores = n_cores
-  )
-  
-  # Combine certainty metrics
-  gap_certainty <- gap_probability * gap_stability
   
   # Extract gap polygons at specified thresholds
   if (verbose) {
@@ -865,6 +917,7 @@ detect_morphospace_gaps <- function(pca_scores,
                                    bootstrap_iterations,
                                    bootstrap_sample_size = NULL,
                                    monte_carlo_iterations,
+                                   monte_carlo_iterations_bootstrap = NULL,
                                    uncertainty_type,
                                    occupancy_method,
                                    occupancy_radius,
@@ -901,7 +954,11 @@ detect_morphospace_gaps <- function(pca_scores,
     
     # Compute gap probability for this bootstrap sample
     # (using reduced Monte Carlo iterations for efficiency)
-    mc_iter_boot <- max(50, monte_carlo_iterations %/% 2)
+    mc_iter_boot <- if (is.null(monte_carlo_iterations_bootstrap)) {
+      max(50, monte_carlo_iterations %/% 2)
+    } else {
+      as.integer(monte_carlo_iterations_bootstrap)
+    }
     
     gap_prob_boot <- .compute_gap_probability(
       points = boot_points,
@@ -935,6 +992,84 @@ detect_morphospace_gaps <- function(pca_scores,
   gap_stability[!in_domain_matrix] <- NA
   
   return(gap_stability)
+}
+
+
+#' Compute Integrated Gap Probability via Bootstrap + Monte Carlo
+#'
+#' Unified estimator integrating sampling and measurement uncertainty:
+#' for each bootstrap replicate, runs Monte Carlo perturbations and computes
+#' a gap probability matrix; the final gap probability is the mean across
+#' bootstrap replicates.
+#'
+#' @keywords internal
+.compute_gap_probability_bootstrap_mc <- function(points,
+                                                  grid_x,
+                                                  grid_y,
+                                                  u_x,
+                                                  u_y,
+                                                  in_domain,
+                                                  bootstrap_iterations,
+                                                  bootstrap_sample_size = NULL,
+                                                  monte_carlo_iterations,
+                                                  uncertainty_type,
+                                                  occupancy_method,
+                                                  occupancy_radius,
+                                                  cell_size,
+                                                  use_parallel,
+                                                  n_cores) {
+
+  n_grid_x <- length(grid_x)
+  n_grid_y <- length(grid_y)
+  n_points <- nrow(points)
+
+  # Determine bootstrap sample size
+  if (is.null(bootstrap_sample_size)) {
+    boot_size <- n_points
+  } else if (bootstrap_sample_size <= 1) {
+    boot_size <- floor(n_points * bootstrap_sample_size)
+  } else {
+    boot_size <- min(floor(bootstrap_sample_size), n_points)
+  }
+
+  if (boot_size < 2) {
+    stop("bootstrap_sample_size results in < 2 samples")
+  }
+
+  sum_gap_prob <- matrix(0, nrow = n_grid_x, ncol = n_grid_y)
+
+  in_domain_matrix <- matrix(in_domain, nrow = n_grid_x, ncol = n_grid_y)
+
+  for (b in 1:bootstrap_iterations) {
+    boot_indices <- sample(1:n_points, size = boot_size, replace = TRUE)
+    boot_points <- points[boot_indices, ]
+
+    gap_prob_boot <- .compute_gap_probability(
+      points = boot_points,
+      grid_x = grid_x,
+      grid_y = grid_y,
+      u_x = u_x,
+      u_y = u_y,
+      in_domain = in_domain,
+      monte_carlo_iterations = monte_carlo_iterations,
+      uncertainty_type = uncertainty_type,
+      occupancy_method = occupancy_method,
+      occupancy_radius = occupancy_radius,
+      cell_size = cell_size,
+      use_parallel = use_parallel,
+      n_cores = n_cores
+    )
+
+    # Sum, treating out-of-domain NAs as 0 (masked again at end)
+    gap_prob_boot[!in_domain_matrix] <- 0
+    gap_prob_boot[is.na(gap_prob_boot)] <- 0
+    sum_gap_prob <- sum_gap_prob + gap_prob_boot
+  }
+
+  gap_prob_mean <- sum_gap_prob / bootstrap_iterations
+  gap_prob_mean[!in_domain_matrix] <- NA
+
+  return(gap_prob_mean)
 }
 
 

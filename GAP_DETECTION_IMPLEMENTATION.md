@@ -10,10 +10,12 @@ Successfully implemented a comprehensive morphospace gap detection feature for t
 **File**: [R/gap_detection.R](R/gap_detection.R)
 
 **Methodology**:
-- **Two-Stage Uncertainty Analysis**:
-  - **Stage 1 - Measurement Uncertainty**: Monte Carlo simulation treats each observed point as uncertain (±5% default). Points are perturbed according to Gaussian or uniform distribution, and occupancy probability is computed for each grid cell.
-  - **Stage 2 - Sampling Uncertainty**: Bootstrap resampling (200 iterations default) assesses whether gaps are artifacts of limited sampling. Each resample repeats the Monte Carlo procedure.
-  - **Combined Certainty**: `gap_certainty = gap_probability × gap_stability`
+- **Unified Uncertainty Analysis (default)**:
+  - **Bootstrap + Monte Carlo**: For each bootstrap resample (sampling uncertainty), a Monte Carlo perturbation procedure is run (measurement uncertainty). The per-cell gap probability matrices are averaged across bootstrap replicates.
+  - **Certainty for polygons**: `gap_certainty` defaults to the integrated gap probability.
+
+- **Legacy Two-Stage Method (optional)**:
+  - Can be enabled with `estimation_method = "two_stage"` for backward comparability.
 
 - **Domain Constraint**: Uses alpha hull (concave) or convex hull to define finite analysis domain, avoiding infinite morphospace.
 
@@ -39,6 +41,7 @@ detect_morphospace_gaps(
   group_column = NULL,           # Optional: column name to filter groups (e.g., "Group")
   groups = NULL,                 # Optional: which group values to include
   domain_reference = "subset",   # "subset" (default) or "all" (domain from full dataset)
+  estimation_method = "bootstrap_mc",  # "bootstrap_mc" (default) or "two_stage" (legacy)
   certainty_thresholds = c(0.80, 0.90, 0.95),
   max_pcs = 4,                   # Analyze PC1-PC4
   hull_type = "alpha",           # Concave alpha hull

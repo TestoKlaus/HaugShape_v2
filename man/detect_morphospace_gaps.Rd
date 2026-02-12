@@ -9,11 +9,13 @@ detect_morphospace_gaps(
   uncertainty = 0.05,
   grid_resolution = 150,
   monte_carlo_iterations = 100,
+  monte_carlo_iterations_bootstrap = NULL,
   bootstrap_iterations = 200,
   bootstrap_sample_size = NULL,
   group_column = NULL,
   groups = NULL,
   domain_reference = c("subset", "all"),
+  estimation_method = c("bootstrap_mc", "two_stage"),
   certainty_thresholds = c(0.8, 0.9, 0.95),
   pc_pairs = NULL,
   max_pcs = 4,
@@ -39,6 +41,10 @@ detect_morphospace_gaps(
 
 \item{monte_carlo_iterations}{Number of Monte Carlo replicates}
 
+\item{monte_carlo_iterations_bootstrap}{Optional number of Monte Carlo
+replicates to use within each bootstrap replicate. If NULL (default), a
+runtime-friendly value is chosen (currently \code{max(50, monte_carlo_iterations/2)}).}
+
 \item{bootstrap_iterations}{Number of bootstrap resamples}
 
 \item{bootstrap_sample_size}{Optional subsample size for bootstrap iterations.
@@ -59,6 +65,13 @@ hull/bounding box) when group filtering is used. Use \code{"subset"} to
 compute the domain from the filtered data (default), or \code{"all"} to
 compute the domain from the full unfiltered dataset while still computing
 occupancy/gaps from the filtered subset.}
+
+\item{estimation_method}{Estimation strategy. \code{"bootstrap_mc"} (default)
+integrates sampling and measurement uncertainty by running Monte Carlo
+perturbations within each bootstrap replicate and averaging gap probability
+across bootstraps. \code{"two_stage"} uses the legacy two-step approach
+(Monte Carlo on full data, then bootstrap-based stability) for backward
+comparability.}
 
 \item{certainty_thresholds}{Gap certainty thresholds for polygon extraction}
 
@@ -97,26 +110,15 @@ List of class morphospace_gaps with results
 Detect Morphospace Gaps with Uncertainty Quantification
 }
 \details{
-The function implements a rigorous two-stage uncertainty analysis:
+The default method (\code{estimation_method = "bootstrap_mc"}) integrates
+measurement and sampling uncertainty in a single procedure:
+the dataset is resampled (with replacement) B times and for each resample a
+Monte Carlo perturbation procedure is run. The resulting per-cell gap
+probability matrices are averaged across bootstrap replicates.
 
-\strong{Stage 1: Measurement Uncertainty (Monte Carlo)}
-Each observed point is treated as uncertain within ±u (uncertainty * axis range).
-For each Monte Carlo iteration, points are perturbed according to the
-uncertainty model (Gaussian or uniform). Grid cells are marked as occupied
-if any perturbed point falls within the occupancy radius. The gap probability
-for each cell is the proportion of iterations where it remains unoccupied.
-
-\strong{Stage 2: Sampling Uncertainty (Bootstrap)}
-To assess whether gaps are artifacts of limited sampling, the dataset is
-resampled (with replacement) B times. For each resample, the Monte Carlo
-procedure is repeated and a binary gap mask is created. The gap stability
-for each cell is the proportion of bootstrap iterations where it was
-classified as a gap.
-
-\strong{Combined Certainty}
-gap_certainty = gap_probability * gap_stability
-This represents the probability that a region is genuinely unoccupied,
-accounting for both measurement and sampling uncertainty.
+The legacy method (\code{estimation_method = "two_stage"}) retains the older
+two-step computation (full-data Monte Carlo + bootstrap-based stability) and
+combines them as \code{gap_certainty = gap_probability * gap_stability}.
 }
 \examples{
 \dontrun{
