@@ -593,10 +593,17 @@ plotting_server <- function(id, data_reactive) {
       req(results)
       
       thresholds <- results$parameters$certainty_thresholds
+
+      method <- results$parameters$estimation_method
+      threshold_label <- if (!is.null(method) && identical(method, "bootstrap_mc")) {
+        "Probability Threshold"
+      } else {
+        "Certainty Threshold"
+      }
       
       selectInput(
         ns("gap_threshold"),
-        "Certainty Threshold",
+        threshold_label,
         choices = thresholds,
         selected = thresholds[length(thresholds)]
       )
@@ -1674,7 +1681,14 @@ plotting_server <- function(id, data_reactive) {
         high = high_color,
         midpoint = 0.5,
         limits = c(0, 1),
-        name = "Gap\nCertainty"
+        name = {
+          method <- gap_results$parameters$estimation_method
+          if (!is.null(method) && identical(method, "bootstrap_mc")) {
+            "Gap\nProbability"
+          } else {
+            "Gap\nCertainty"
+          }
+        }
       )
   }
   

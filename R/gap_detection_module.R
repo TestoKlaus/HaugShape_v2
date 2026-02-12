@@ -202,7 +202,7 @@ gap_detection_ui <- function(id) {
           
           hr(),
           
-          h5("Certainty Thresholds for Polygon Extraction"),
+          h5("Gap Probability Thresholds for Polygon Extraction"),
           fluidRow(
             column(
               width = 4,
@@ -945,8 +945,17 @@ gap_detection_server <- function(id, pca_data = NULL) {
         p(sprintf("Analyzed %d PC pairs", n_pairs)),
         p(sprintf("Detected %d gap regions", n_gaps)),
         group_info,
-        p(sprintf("Thresholds: %s", 
-                 paste(rv$gap_results$parameters$certainty_thresholds, collapse = ", ")))
+        {
+          method <- rv$gap_results$parameters$estimation_method
+          thr_label <- if (!is.null(method) && identical(method, "bootstrap_mc")) {
+            "Probability thresholds"
+          } else {
+            "Certainty thresholds"
+          }
+          p(sprintf("%s: %s",
+                    thr_label,
+                    paste(rv$gap_results$parameters$certainty_thresholds, collapse = ", ")))
+        }
       )
     })
     
