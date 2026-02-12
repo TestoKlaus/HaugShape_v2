@@ -771,7 +771,6 @@ detect_morphospace_gaps <- function(pca_scores,
   
   n_grid_x <- length(grid_x)
   n_grid_y <- length(grid_y)
-  n_points <- nrow(points)
   
   # Initialize occupancy counter
   occupancy_count <- matrix(0, nrow = n_grid_x, ncol = n_grid_y)
@@ -1040,30 +1039,80 @@ detect_morphospace_gaps <- function(pca_scores,
 
   in_domain_matrix <- matrix(in_domain, nrow = n_grid_x, ncol = n_grid_y)
 
-  for (b in 1:bootstrap_iterations) {
-    boot_indices <- sample(1:n_points, size = boot_size, replace = TRUE)
-    boot_points <- points[boot_indices, ]
+  # Precompute bootstrap indices for reproducibility and to avoid RNG issues in parallel
+  boot_indices_list <- lapply(seq_len(bootstrap_iterations), function(i) {
+    sample.int(n_points, size = boot_size, replace = TRUE)
+  })
 
-    gap_prob_boot <- .compute_gap_probability(
-      points = boot_points,
-      grid_x = grid_x,
-      grid_y = grid_y,
-      u_x = u_x,
-      u_y = u_y,
-      in_domain = in_domain,
-      monte_carlo_iterations = monte_carlo_iterations,
-      uncertainty_type = uncertainty_type,
-      occupancy_method = occupancy_method,
-      occupancy_radius = occupancy_radius,
-      cell_size = cell_size,
-      use_parallel = use_parallel,
-      n_cores = n_cores
+  if (isTRUE(use_parallel) && requireNamespace("parallel", quietly = TRUE)) {
+    if (is.null(n_cores) || !is.finite(n_cores) || n_cores < 1) {
+      n_cores <- max(1, parallel::detectCores() - 1)
+    }
+
+    cl <- parallel::makeCluster(n_cores)
+    on.exit(parallel::stopCluster(cl), add = TRUE)
+
+    # Export required functions and objects
+    parallel::clusterExport(
+      cl,
+      varlist = c(
+        "points", "grid_x", "grid_y", "u_x", "u_y", "in_domain",
+        "monte_carlo_iterations", "uncertainty_type", "occupancy_method",
+        "occupancy_radius", "cell_size", "boot_indices_list",
+        ".compute_gap_probability", ".monte_carlo_iteration"
+      ),
+      envir = environment()
     )
 
-    # Sum, treating out-of-domain NAs as 0 (masked again at end)
-    gap_prob_boot[!in_domain_matrix] <- 0
-    gap_prob_boot[is.na(gap_prob_boot)] <- 0
-    sum_gap_prob <- sum_gap_prob + gap_prob_boot
+    gap_prob_list <- parallel::parLapply(cl, seq_len(bootstrap_iterations), function(b) {
+      boot_points <- points[boot_indices_list[[b]], , drop = FALSE]
+
+      .compute_gap_probability(
+        points = boot_points,
+        grid_x = grid_x,
+        grid_y = grid_y,
+        u_x = u_x,
+        u_y = u_y,
+        in_domain = in_domain,
+        monte_carlo_iterations = monte_carlo_iterations,
+        uncertainty_type = uncertainty_type,
+        occupancy_method = occupancy_method,
+        occupancy_radius = occupancy_radius,
+        cell_size = cell_size,
+        use_parallel = FALSE,
+        n_cores = 1
+      )
+    })
+
+    for (gap_prob_boot in gap_prob_list) {
+      gap_prob_boot[!in_domain_matrix] <- 0
+      gap_prob_boot[is.na(gap_prob_boot)] <- 0
+      sum_gap_prob <- sum_gap_prob + gap_prob_boot
+    }
+  } else {
+    for (b in 1:bootstrap_iterations) {
+      boot_points <- points[boot_indices_list[[b]], , drop = FALSE]
+
+      gap_prob_boot <- .compute_gap_probability(
+        points = boot_points,
+        grid_x = grid_x,
+        grid_y = grid_y,
+        u_x = u_x,
+        u_y = u_y,
+        in_domain = in_domain,
+        monte_carlo_iterations = monte_carlo_iterations,
+        uncertainty_type = uncertainty_type,
+        occupancy_method = occupancy_method,
+        occupancy_radius = occupancy_radius,
+        cell_size = cell_size,
+        use_parallel = FALSE,
+        n_cores = 1
+      )
+
+      gap_prob_boot[!in_domain_matrix] <- 0
+      gap_prob_boot[is.na(gap_prob_boot)] <- 0
+      sum_gap_prob <- sum_gap_prob + gap_prob_boot
+    }
   }
 
   gap_prob_mean <- sum_gap_prob / bootstrap_iterations
