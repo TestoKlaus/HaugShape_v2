@@ -16,6 +16,9 @@ utils::globalVariables(c("x", "y", "certainty", "group"))
 #'   (e.g., 0.5 = 50% of data). Values > 1 are treated as absolute counts.
 #'   Useful for comparing datasets with different sample sizes by normalizing
 #'   to the smallest dataset size.
+#' @param bootstrap_progress_every Print a progress message every N bootstrap
+#'   iterations when \\code{verbose = TRUE}. Also used for \\code{progress_callback}
+#'   updates (e.g., in Shiny). Set to a larger number to reduce console output.
 #' @param group_column Optional column name in \\code{pca_scores} used to filter
 #'   specimens into groups for analysis. If NULL (default), uses all rows.
 #' @param groups Optional vector of group values to include (matched against
@@ -91,6 +94,7 @@ detect_morphospace_gaps <- function(pca_scores,
                                     monte_carlo_iterations_bootstrap = NULL,
                                     bootstrap_iterations = 200,
                                     bootstrap_sample_size = NULL,
+                                    bootstrap_progress_every = 100,
                                     group_column = NULL,
                                     groups = NULL,
                                     domain_reference = c("subset", "all"),
@@ -266,6 +270,7 @@ detect_morphospace_gaps <- function(pca_scores,
     monte_carlo_iterations_bootstrap = monte_carlo_iterations_bootstrap,
     bootstrap_iterations = bootstrap_iterations,
     bootstrap_sample_size = bootstrap_sample_size,
+    bootstrap_progress_every = bootstrap_progress_every,
     bootstrap_actual_size = actual_sample_size,
     group_column = group_column,
     groups = groups,
@@ -342,6 +347,7 @@ detect_morphospace_gaps <- function(pca_scores,
       monte_carlo_iterations_bootstrap = monte_carlo_iterations_bootstrap,
       bootstrap_iterations = bootstrap_iterations,
       bootstrap_sample_size = bootstrap_sample_size,
+      bootstrap_progress_every = bootstrap_progress_every,
       certainty_thresholds = certainty_thresholds,
       domain_mode = domain_mode,
       hull_type = hull_type,
@@ -353,7 +359,8 @@ detect_morphospace_gaps <- function(pca_scores,
       use_parallel = use_parallel,
       n_cores = n_cores,
       verbose = verbose,
-      estimation_method = estimation_method
+      estimation_method = estimation_method,
+      progress_callback = progress_callback
     )
     
     # Store results
@@ -415,6 +422,7 @@ detect_morphospace_gaps <- function(pca_scores,
                              monte_carlo_iterations_bootstrap = NULL,
                              bootstrap_iterations,
                              bootstrap_sample_size = NULL,
+                             bootstrap_progress_every = 100,
                              certainty_thresholds,
                              domain_mode,
                              hull_type,
@@ -426,7 +434,8 @@ detect_morphospace_gaps <- function(pca_scores,
                              use_parallel,
                              n_cores,
                              verbose,
-                             estimation_method = c("bootstrap_mc", "two_stage")) {
+                             estimation_method = c("bootstrap_mc", "two_stage"),
+                             progress_callback = NULL) {
 
   estimation_method <- match.arg(estimation_method)
   
@@ -544,6 +553,7 @@ detect_morphospace_gaps <- function(pca_scores,
       bootstrap_sample_size = bootstrap_sample_size,
       monte_carlo_iterations = monte_carlo_iterations,
       monte_carlo_iterations_bootstrap = monte_carlo_iterations_bootstrap,
+      bootstrap_progress_every = bootstrap_progress_every,
       uncertainty_type = uncertainty_type,
       occupancy_method = occupancy_method,
       occupancy_radius = occupancy_radius,
@@ -584,12 +594,15 @@ detect_morphospace_gaps <- function(pca_scores,
       bootstrap_iterations = bootstrap_iterations,
       bootstrap_sample_size = bootstrap_sample_size,
       monte_carlo_iterations = mc_iter_boot,
+      bootstrap_progress_every = bootstrap_progress_every,
       uncertainty_type = uncertainty_type,
       occupancy_method = occupancy_method,
       occupancy_radius = occupancy_radius,
       cell_size = cell_size,
       use_parallel = use_parallel,
-      n_cores = n_cores
+      n_cores = n_cores,
+      verbose = verbose,
+      progress_callback = progress_callback
     )
 
     # Stability is not used in the unified estimator
@@ -917,6 +930,7 @@ detect_morphospace_gaps <- function(pca_scores,
                                    bootstrap_sample_size = NULL,
                                    monte_carlo_iterations,
                                    monte_carlo_iterations_bootstrap = NULL,
+                                   bootstrap_progress_every = 100,
                                    uncertainty_type,
                                    occupancy_method,
                                    occupancy_radius,
@@ -945,42 +959,55 @@ detect_morphospace_gaps <- function(pca_scores,
   # Choose gap probability threshold for binary classification
   gap_threshold <- 0.5  # Cells with gap_prob > 0.5 are classified as gaps
   
-  # Bootstrap iterations
-  for (b in 1:bootstrap_iterations) {
-    # Resample points with replacement
-    boot_indices <- sample(1:n_points, size = boot_size, replace = TRUE)
-    boot_points <- points[boot_indices, ]
-    
-    # Compute gap probability for this bootstrap sample
-    # (using reduced Monte Carlo iterations for efficiency)
-    mc_iter_boot <- if (is.null(monte_carlo_iterations_bootstrap)) {
-      max(50, monte_carlo_iterations %/% 2)
-    } else {
-      as.integer(monte_carlo_iterations_bootstrap)
+  # Precompute bootstrap indices to keep RNG behavior stable
+  boot_indices_list <- lapply(seq_len(bootstrap_iterations), function(i) {
+    sample.int(n_points, size = boot_size, replace = TRUE)
+  })
+
+  mc_iter_boot <- if (is.null(monte_carlo_iterations_bootstrap)) {
+    max(50, monte_carlo_iterations %/% 2)
+  } else {
+    as.integer(monte_carlo_iterations_bootstrap)
+  }
+
+  if (!is.finite(mc_iter_boot) || mc_iter_boot < 1) {
+    stop("monte_carlo_iterations_bootstrap must be a positive integer")
+  }
+
+  progress_every <- as.integer(bootstrap_progress_every)
+  if (!is.finite(progress_every) || progress_every < 1) {
+    progress_every <- bootstrap_iterations
+  }
+
+  batch_starts <- seq(1L, bootstrap_iterations, by = progress_every)
+
+  for (start_idx in batch_starts) {
+    end_idx <- min(bootstrap_iterations, start_idx + progress_every - 1L)
+    batch <- start_idx:end_idx
+
+    for (b in batch) {
+      boot_points <- points[boot_indices_list[[b]], , drop = FALSE]
+
+      gap_prob_boot <- .compute_gap_probability(
+        points = boot_points,
+        grid_x = grid_x,
+        grid_y = grid_y,
+        u_x = u_x,
+        u_y = u_y,
+        in_domain = in_domain,
+        monte_carlo_iterations = mc_iter_boot,
+        uncertainty_type = uncertainty_type,
+        occupancy_method = occupancy_method,
+        occupancy_radius = occupancy_radius,
+        cell_size = cell_size,
+        use_parallel = FALSE,
+        n_cores = 1
+      )
+
+      is_gap <- gap_prob_boot > gap_threshold
+      is_gap[is.na(is_gap)] <- FALSE
+      gap_count <- gap_count + is_gap
     }
-    
-    gap_prob_boot <- .compute_gap_probability(
-      points = boot_points,
-      grid_x = grid_x,
-      grid_y = grid_y,
-      u_x = u_x,
-      u_y = u_y,
-      in_domain = in_domain,
-      monte_carlo_iterations = mc_iter_boot,
-      uncertainty_type = uncertainty_type,
-      occupancy_method = occupancy_method,
-      occupancy_radius = occupancy_radius,
-      cell_size = cell_size,
-      use_parallel = FALSE,  # Already in bootstrap loop
-      n_cores = 1
-    )
-    
-    # Create binary gap mask
-    is_gap <- gap_prob_boot > gap_threshold
-    is_gap[is.na(is_gap)] <- FALSE
-    
-    # Increment counter for cells classified as gaps
-    gap_count <- gap_count + is_gap
   }
   
   # Calculate stability: proportion of bootstrap iterations where classified as gap
@@ -1011,12 +1038,15 @@ detect_morphospace_gaps <- function(pca_scores,
                                                   bootstrap_iterations,
                                                   bootstrap_sample_size = NULL,
                                                   monte_carlo_iterations,
+                                                  bootstrap_progress_every = 100,
                                                   uncertainty_type,
                                                   occupancy_method,
                                                   occupancy_radius,
                                                   cell_size,
                                                   use_parallel,
-                                                  n_cores) {
+                                                  n_cores,
+                                                  verbose = FALSE,
+                                                  progress_callback = NULL) {
 
   n_grid_x <- length(grid_x)
   n_grid_y <- length(grid_y)
@@ -1044,6 +1074,22 @@ detect_morphospace_gaps <- function(pca_scores,
     sample.int(n_points, size = boot_size, replace = TRUE)
   })
 
+  progress_every <- as.integer(bootstrap_progress_every)
+  if (!is.finite(progress_every) || progress_every < 1) {
+    progress_every <- bootstrap_iterations
+  }
+
+  batch_starts <- seq(1L, bootstrap_iterations, by = progress_every)
+
+  report_progress <- function(done) {
+    if (isTRUE(verbose)) {
+      cat(sprintf("    Bootstrap progress: %d/%d\n", done, bootstrap_iterations))
+    }
+    if (!is.null(progress_callback) && is.function(progress_callback)) {
+      progress_callback(sprintf("Bootstrap %d/%d", done, bootstrap_iterations), 0)
+    }
+  }
+
   if (isTRUE(use_parallel) && requireNamespace("parallel", quietly = TRUE)) {
     if (is.null(n_cores) || !is.finite(n_cores) || n_cores < 1) {
       n_cores <- max(1, parallel::detectCores() - 1)
@@ -1064,54 +1110,68 @@ detect_morphospace_gaps <- function(pca_scores,
       envir = environment()
     )
 
-    gap_prob_list <- parallel::parLapply(cl, seq_len(bootstrap_iterations), function(b) {
-      boot_points <- points[boot_indices_list[[b]], , drop = FALSE]
+    for (start_idx in batch_starts) {
+      end_idx <- min(bootstrap_iterations, start_idx + progress_every - 1L)
+      batch <- start_idx:end_idx
 
-      .compute_gap_probability(
-        points = boot_points,
-        grid_x = grid_x,
-        grid_y = grid_y,
-        u_x = u_x,
-        u_y = u_y,
-        in_domain = in_domain,
-        monte_carlo_iterations = monte_carlo_iterations,
-        uncertainty_type = uncertainty_type,
-        occupancy_method = occupancy_method,
-        occupancy_radius = occupancy_radius,
-        cell_size = cell_size,
-        use_parallel = FALSE,
-        n_cores = 1
-      )
-    })
+      gap_prob_list <- parallel::parLapply(cl, batch, function(b) {
+        boot_points <- points[boot_indices_list[[b]], , drop = FALSE]
 
-    for (gap_prob_boot in gap_prob_list) {
-      gap_prob_boot[!in_domain_matrix] <- 0
-      gap_prob_boot[is.na(gap_prob_boot)] <- 0
-      sum_gap_prob <- sum_gap_prob + gap_prob_boot
+        .compute_gap_probability(
+          points = boot_points,
+          grid_x = grid_x,
+          grid_y = grid_y,
+          u_x = u_x,
+          u_y = u_y,
+          in_domain = in_domain,
+          monte_carlo_iterations = monte_carlo_iterations,
+          uncertainty_type = uncertainty_type,
+          occupancy_method = occupancy_method,
+          occupancy_radius = occupancy_radius,
+          cell_size = cell_size,
+          use_parallel = FALSE,
+          n_cores = 1
+        )
+      })
+
+      for (gap_prob_boot in gap_prob_list) {
+        gap_prob_boot[!in_domain_matrix] <- 0
+        gap_prob_boot[is.na(gap_prob_boot)] <- 0
+        sum_gap_prob <- sum_gap_prob + gap_prob_boot
+      }
+
+      report_progress(end_idx)
     }
   } else {
-    for (b in 1:bootstrap_iterations) {
-      boot_points <- points[boot_indices_list[[b]], , drop = FALSE]
+    for (start_idx in batch_starts) {
+      end_idx <- min(bootstrap_iterations, start_idx + progress_every - 1L)
+      batch <- start_idx:end_idx
 
-      gap_prob_boot <- .compute_gap_probability(
-        points = boot_points,
-        grid_x = grid_x,
-        grid_y = grid_y,
-        u_x = u_x,
-        u_y = u_y,
-        in_domain = in_domain,
-        monte_carlo_iterations = monte_carlo_iterations,
-        uncertainty_type = uncertainty_type,
-        occupancy_method = occupancy_method,
-        occupancy_radius = occupancy_radius,
-        cell_size = cell_size,
-        use_parallel = FALSE,
-        n_cores = 1
-      )
+      for (b in batch) {
+        boot_points <- points[boot_indices_list[[b]], , drop = FALSE]
 
-      gap_prob_boot[!in_domain_matrix] <- 0
-      gap_prob_boot[is.na(gap_prob_boot)] <- 0
-      sum_gap_prob <- sum_gap_prob + gap_prob_boot
+        gap_prob_boot <- .compute_gap_probability(
+          points = boot_points,
+          grid_x = grid_x,
+          grid_y = grid_y,
+          u_x = u_x,
+          u_y = u_y,
+          in_domain = in_domain,
+          monte_carlo_iterations = monte_carlo_iterations,
+          uncertainty_type = uncertainty_type,
+          occupancy_method = occupancy_method,
+          occupancy_radius = occupancy_radius,
+          cell_size = cell_size,
+          use_parallel = FALSE,
+          n_cores = 1
+        )
+
+        gap_prob_boot[!in_domain_matrix] <- 0
+        gap_prob_boot[is.na(gap_prob_boot)] <- 0
+        sum_gap_prob <- sum_gap_prob + gap_prob_boot
+      }
+
+      report_progress(end_idx)
     }
   }
 

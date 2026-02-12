@@ -12,6 +12,7 @@ detect_morphospace_gaps(
   monte_carlo_iterations_bootstrap = NULL,
   bootstrap_iterations = 200,
   bootstrap_sample_size = NULL,
+  bootstrap_progress_every = 100,
   group_column = NULL,
   groups = NULL,
   domain_reference = c("subset", "all"),
@@ -53,6 +54,10 @@ If NULL (default), uses full dataset. Values <= 1 are treated as fractions
 (e.g., 0.5 = 50% of data). Values > 1 are treated as absolute counts.
 Useful for comparing datasets with different sample sizes by normalizing
 to the smallest dataset size.}
+
+\item{bootstrap_progress_every}{Print a progress message every N bootstrap
+iterations when \code{verbose = TRUE}. Also used for \code{progress_callback}
+updates (e.g., in Shiny). Set to a larger number to reduce console output.}
 
 \item{group_column}{Optional column name in \code{pca_scores} used to filter
 specimens into groups for analysis. If NULL (default), uses all rows.}
