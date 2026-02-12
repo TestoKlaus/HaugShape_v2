@@ -43,7 +43,8 @@ detect_morphospace_gaps(
 
 \item{monte_carlo_iterations_bootstrap}{Optional number of Monte Carlo
 replicates to use within each bootstrap replicate. If NULL (default), a
-runtime-friendly value is chosen (currently \code{max(50, monte_carlo_iterations/2)}).}
+uses
+the value of \code{monte_carlo_iterations}.}
 
 \item{bootstrap_iterations}{Number of bootstrap resamples}
 

@@ -8,8 +8,8 @@ utils::globalVariables(c("x", "y", "certainty", "group"))
 #' @param grid_resolution Number of grid cells along each axis
 #' @param monte_carlo_iterations Number of Monte Carlo replicates
 #' @param monte_carlo_iterations_bootstrap Optional number of Monte Carlo
-#'   replicates to use within each bootstrap replicate. If NULL (default), a
-#'   runtime-friendly value is chosen (currently \\code{max(50, monte_carlo_iterations/2)}).
+#'   replicates to use within each bootstrap replicate. If NULL (default), uses
+#'   the value of \\code{monte_carlo_iterations}.
 #' @param bootstrap_iterations Number of bootstrap resamples
 #' @param bootstrap_sample_size Optional subsample size for bootstrap iterations.
 #'   If NULL (default), uses full dataset. Values <= 1 are treated as fractions
@@ -561,8 +561,8 @@ detect_morphospace_gaps <- function(pca_scores,
     }
 
     mc_iter_boot <- if (is.null(monte_carlo_iterations_bootstrap)) {
-      # Keep runtime comparable to legacy defaults (where bootstrap used ~50 when MC=100)
-      max(50, monte_carlo_iterations %/% 2)
+      # Unified method default: use the full MC iterations specified by the user
+      as.integer(monte_carlo_iterations)
     } else {
       as.integer(monte_carlo_iterations_bootstrap)
     }
